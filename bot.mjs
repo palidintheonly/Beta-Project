@@ -32,9 +32,9 @@ if (fs.existsSync(auditLogsFile)) {
 }
 
 // === Bot Configuration ===
-const token = 'MTM0NjE5Nzk2MDUxMzQyNTQ4OQ.GNhson.BESZ54nca8mc-tKIrUNh5qxR6J-2c9XR7ooKCk';
-const clientId = '1346197960513425489';
-const guildId = '1269949849810501643';
+const token = 'redacted';
+const clientId = 'redacted';
+const guildId = 'redacted';
 
 // Create a new Discord client instance
 const client = new Client({
