@@ -6,6 +6,8 @@ import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
 import path from 'path';
+import { REST } from '@discordjs/rest';
+import { Routes } from 'discord-api-types/v9';
 
 // Define data directory and file paths for persistent storage
 const dataDir = path.resolve('./data');
@@ -14,6 +16,14 @@ const auditLogsFile = path.join(dataDir, 'auditLogs.json');
 const messageLogsFile = path.join(dataDir, 'messageLogs.json');
 const uptimeFile = path.join(dataDir, 'uptime.json');
 const statusFile = path.join(dataDir, 'status.json');
+
+// Add Discord API status tracking
+let discordApiStatus = {
+  readyTimestamp: null,
+  gatewayPing: 0,
+  uptimeSince: null,
+  lastUpdated: null
+};
 
 // Ensure data directory exists
 function ensureDirectoryExists(directory) {
@@ -192,6 +202,18 @@ function formatAuditAction(action) {
   return actionMap[action] || `Unknown Action #${action}`;
 }
 
+// Function to update Discord API status
+function updateDiscordApiStatus() {
+  if (client && client.uptime) {
+    discordApiStatus = {
+      readyTimestamp: client.readyTimestamp,
+      gatewayPing: client.ws.ping,
+      uptimeSince: new Date(Date.now() - client.uptime).toISOString(),
+      lastUpdated: new Date().toISOString()
+    };
+  }
+}
+
 // Function to update bot status
 function updateBotStatus() {
   const status = statusMessages[currentStatusIndex];
@@ -309,10 +331,23 @@ function saveMessageLogs() {
   saveJSONFile(messageLogsFile, messageLogs, 1000);
 }
 
+// Add a function to track reconnections and update Discord status
+client.on('shardReconnecting', (id) => {
+  console.log(`Shard #${id} reconnecting`);
+  uptimeData.reconnections += 1;
+  saveJSONFile(uptimeFile, uptimeData);
+});
+
 // === Discord Bot Event Handling ===
 client.once('ready', () => {
   console.log(`Bot successfully logged in as ${client.user.tag}!`);
   console.log('Slash commands have been removed as requested');
+  
+  // Update Discord API status
+  updateDiscordApiStatus();
+  
+  // Set up periodic updates of Discord API status
+  setInterval(updateDiscordApiStatus, 30000); // Every 30 seconds
   
   // Update the uptime start time if this is a fresh start
   if (uptimeData.milliseconds === 0) {
@@ -761,6 +796,12 @@ function baseHTML(title, content) {
             padding: 15px;
             margin-bottom: 15px;
             background-color: #f8f9fa;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            transition: all 0.3s;
+          }
+          .uptime-card:hover {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
           }
           .uptime-detail {
             display: flex;
@@ -784,6 +825,73 @@ function baseHTML(title, content) {
             padding-bottom: 10px;
             margin-bottom: 15px;
             color: #00796b;
+          }
+          .error-message {
+            background-color: #ffebee;
+            border-left: 5px solid #f44336;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+          }
+          
+          .uptime-dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+          }
+          
+          .uptime-refresh-button {
+            padding: 8px 15px;
+            background-color: #00796b;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+          }
+          
+          .uptime-refresh-button:hover {
+            background-color: #004d40;
+            transform: scale(1.05);
+          }
+          
+          .uptime-refresh-icon {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+          }
+          
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+          
+          .status-detail {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 12px;
+            border-radius: 30px;
+            background-color: #e8f5e9;
+            margin-right: 10px;
+            font-size: 0.9em;
+          }
+          
+          .status-detail-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+          }
+          
+          .status-warning {
+            background-color: #FF9800;
           }
         </style>
         <script>
@@ -937,39 +1045,74 @@ function baseHTML(title, content) {
           function refreshDetailedUptime() {
             // Get uptime data from server
             fetch('/uptime-data')
-              .then(response => response.json())
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error('Network response was not ok');
+                }
+                return response.json();
+              })
               .then(data => {
                 const uptimeElement = document.getElementById('detailedUptime');
                 if (uptimeElement) {
                   const now = new Date();
-                  const startDate = new Date(data.startTime);
-                  const days = data.days;
-                  const hours = data.hours;
-                  const minutes = data.minutes;
-                  const seconds = data.seconds;
-                  const milliseconds = data.milliseconds;
-                  const uptime = days + "d " + (hours % 24) + "h " + (minutes % 60) + "m " + (seconds % 60) + "s";
                   
+                  // Process uptime information
+                  const days = data.process.days;
+                  const hours = data.process.hours % 24;
+                  const minutes = data.process.minutes % 60;
+                  const seconds = data.process.seconds % 60;
+                  const uptime = \`\${days}d \${hours}h \${minutes}m \${seconds}s\`;
+                  
+                  // Get Discord API information - handle missing data gracefully
+                  const discordData = data.discord || {};
+                  const discordStartTime = discordData.readyTimestamp ? new Date(discordData.readyTimestamp) : null;
+                  const discordPing = discordData.gatewayPing >= 0 ? discordData.gatewayPing : 'N/A';
+                  
+                  // Get current bot status
+                  const statusText = (client && client.user) ? 'Online' : 'Connecting...';
+                  const currentActivity = (statusData && statusData.currentActivity) ? statusData.currentActivity : 'MonkeyBytes Monitoring System';
+                  const connectedServers = (statusData && statusData.connectedServers) ? statusData.connectedServers : 1;
+                  
+                  // Format session stability based on uptime days
+                  const sessionStability = formatSessionStability(days);
+                  
+                  // Memory information formatting
+                  let memoryInfo = 'N/A';
+                  if (data.systemInfo && data.systemInfo.memoryUsage) {
+                    const rssInMB = Math.round(data.systemInfo.memoryUsage.rss / 1024 / 1024);
+                    const heapUsedInMB = Math.round(data.systemInfo.memoryUsage.heapUsed / 1024 / 1024);
+                    memoryInfo = \`\${rssInMB} MB (\${heapUsedInMB} MB heap)\`;
+                  }
+                  
+                  // Generate detailed uptime HTML
                   let uptimeHTML = \`
                     <h2 class="uptime-heading"><span class="status-indicator status-online"></span> Bot Uptime Details</h2>
                     
                     <div class="uptime-card">
                       <h3>Session Information</h3>
                       <div class="uptime-detail">
-                        <span class="uptime-detail-label">Bot Started At:</span>
-                        <span class="uptime-detail-value">\${startDate.toLocaleString('en-GB', { hour12: false })}</span>
+                        <span class="uptime-detail-label">Bot Process Started At:</span>
+                        <span class="uptime-detail-value">\${new Date(data.process.startTime).toLocaleString('en-GB', { hour12: false })}</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Discord Login Time:</span>
+                        <span class="uptime-detail-value">\${discordStartTime ? discordStartTime.toLocaleString('en-GB', { hour12: false }) : 'Connecting...'}</span>
                       </div>
                       <div class="uptime-detail">
                         <span class="uptime-detail-label">Current Status:</span>
-                        <span class="uptime-detail-value">online</span>
+                        <span class="uptime-detail-value">\${statusText}</span>
                       </div>
                       <div class="uptime-detail">
                         <span class="uptime-detail-label">Current Activity:</span>
-                        <span class="uptime-detail-value">MonkeyBytes Monitoring System</span>
+                        <span class="uptime-detail-value">\${currentActivity}</span>
                       </div>
                       <div class="uptime-detail">
                         <span class="uptime-detail-label">Connected Servers:</span>
-                        <span class="uptime-detail-value">1</span>
+                        <span class="uptime-detail-value">\${connectedServers}</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Discord Gateway Ping:</span>
+                        <span class="uptime-detail-value">\${discordPing} ms</span>
                       </div>
                     </div>
                     
@@ -984,20 +1127,20 @@ function baseHTML(title, content) {
                         <span class="uptime-detail-value">\${days} days</span>
                       </div>
                       <div class="uptime-detail">
-                        <span class="uptime-detail-label">Hours Online:</span>
-                        <span class="uptime-detail-value">\${hours} hours</span>
+                        <span class="uptime-detail-label">Hours Online (total):</span>
+                        <span class="uptime-detail-value">\${data.process.hours} hours</span>
                       </div>
                       <div class="uptime-detail">
-                        <span class="uptime-detail-label">Minutes Online:</span>
-                        <span class="uptime-detail-value">\${minutes} minutes</span>
+                        <span class="uptime-detail-label">Minutes Online (total):</span>
+                        <span class="uptime-detail-value">\${data.process.minutes} minutes</span>
                       </div>
                       <div class="uptime-detail">
-                        <span class="uptime-detail-label">Seconds Online:</span>
-                        <span class="uptime-detail-value">\${seconds} seconds</span>
+                        <span class="uptime-detail-label">Seconds Online (total):</span>
+                        <span class="uptime-detail-value">\${data.process.seconds} seconds</span>
                       </div>
                       <div class="uptime-detail">
                         <span class="uptime-detail-label">Milliseconds Online:</span>
-                        <span class="uptime-detail-value">\${milliseconds.toLocaleString()} ms</span>
+                        <span class="uptime-detail-value">\${data.process.milliseconds.toLocaleString()} ms</span>
                       </div>
                     </div>
                     
@@ -1005,11 +1148,23 @@ function baseHTML(title, content) {
                       <h3>Stability Metrics</h3>
                       <div class="uptime-detail">
                         <span class="uptime-detail-label">Current Session:</span>
-                        <span class="uptime-detail-value">\${formatSessionStability(days)}</span>
+                        <span class="uptime-detail-value">\${sessionStability}</span>
                       </div>
                       <div class="uptime-detail">
                         <span class="uptime-detail-label">Reconnection Count:</span>
-                        <span class="uptime-detail-value">0</span>
+                        <span class="uptime-detail-value">\${data.process.reconnections || 0}</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Memory Usage:</span>
+                        <span class="uptime-detail-value">\${memoryInfo}</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Node.js Version:</span>
+                        <span class="uptime-detail-value">\${data.systemInfo?.nodeVersion || process.version}</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Platform:</span>
+                        <span class="uptime-detail-value">\${data.systemInfo?.platform || process.platform} (\${data.systemInfo?.arch || process.arch})</span>
                       </div>
                     </div>
                     
@@ -1023,7 +1178,14 @@ function baseHTML(title, content) {
                 console.error('Error refreshing uptime data:', error);
                 const uptimeElement = document.getElementById('detailedUptime');
                 if (uptimeElement) {
-                  uptimeElement.innerHTML = '<p>Error loading uptime data. Please try again later.</p>';
+                  uptimeElement.innerHTML = \`
+                    <div class="error-message">
+                      <h3>Error Loading Uptime Data</h3>
+                      <p>There was a problem retrieving the uptime information. Please try again later.</p>
+                      <p>Technical details: \${error.message}</p>
+                      <button onclick="refreshDetailedUptime()" class="refresh-button">Try Again</button>
+                    </div>
+                  \`;
                 }
               });
           }
@@ -1116,30 +1278,42 @@ app.get('/server-metrics', async (req, res) => {
 });
 
 // API endpoint for uptime data
-app.get('/uptime-data', (req, res) => {
+app.get('/uptime-data', async (req, res) => {
   try {
     // We'll update the uptime real-time here to ensure it's accurate
     const now = new Date();
     const start = new Date(uptimeData.startTime);
     const diffMs = now - start;
     
-    // Calculate current uptime
+    // Calculate current uptime components
     const seconds = Math.floor(diffMs / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
     
-    // Send the current uptime data
-    res.json({
-      startTime: uptimeData.startTime,
-      days: days,
-      hours: hours,
-      minutes: minutes,
-      seconds: seconds,
-      milliseconds: diffMs,
-      reconnections: uptimeData.reconnections,
-      formattedUptime: `${days}d ${hours % 24}h ${minutes % 60}m ${seconds % 60}s`
-    });
+    // Create comprehensive uptime data response
+    const uptimeResponse = {
+      process: {
+        startTime: uptimeData.startTime,
+        days: days,
+        hours: hours,
+        minutes: minutes,
+        seconds: seconds,
+        milliseconds: diffMs,
+        reconnections: uptimeData.reconnections,
+        formattedUptime: `${days}d ${hours % 24}h ${minutes % 60}m ${seconds % 60}s`
+      },
+      discord: discordApiStatus,
+      systemInfo: {
+        nodeVersion: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        memoryUsage: process.memoryUsage(),
+        cpuUsage: process.cpuUsage()
+      }
+    };
+    
+    res.json(uptimeResponse);
   } catch (error) {
     console.error('Error generating uptime data:', error);
     res.status(500).json({ error: 'Failed to generate uptime data' });
@@ -1164,10 +1338,44 @@ app.get('/latest-messages', (req, res) => {
 
 // NEW: Dedicated route for detailed uptime information
 app.get('/uptime', (req, res) => {
+  // Get current uptime data for immediate display
+  const now = new Date();
+  const start = new Date(uptimeData.startTime);
+  const diffMs = now - start;
+  
+  // Calculate current uptime
+  const seconds = Math.floor(diffMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  const formattedUptime = `${days}d ${hours % 24}h ${minutes % 60}m ${seconds % 60}s`;
+  
   let content = `
-    <h1>Bot Uptime Details</h1>
+    <div class="uptime-dashboard-header">
+      <h1>Bot Uptime Details</h1>
+      <button onclick="refreshDetailedUptime()" class="uptime-refresh-button">
+        <span id="refresh-icon"></span> Refresh Now
+      </button>
+    </div>
+    
+    <div class="status-overview">
+      <div class="status-detail">
+        <span class="status-detail-indicator status-online"></span>
+        Bot Status: Online
+      </div>
+      <div class="status-detail">
+        <span class="status-detail-indicator status-online"></span>
+        Current Uptime: ${formattedUptime}
+      </div>
+    </div>
+    
     <div id="detailedUptime" class="server-metrics">
-      <p>Loading uptime information...</p>
+      <div style="text-align: center; padding: 20px;">
+        <div style="display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3; 
+             border-top: 4px solid #00796b; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <p>Loading detailed uptime information...</p>
+      </div>
     </div>
     
     <div class="help-tip">
@@ -1182,7 +1390,30 @@ app.get('/uptime', (req, res) => {
       <p>A higher uptime indicates better bot stability and fewer restarts.</p>
     </div>
     
-    <button onclick="refreshDetailedUptime()" class="refresh-button">Refresh Now</button>
+    <script>
+      // Add loading animation during refresh
+      function showRefreshAnimation() {
+        const icon = document.getElementById('refresh-icon');
+        if (icon) {
+          icon.className = 'uptime-refresh-icon';
+          setTimeout(() => {
+            icon.className = '';
+          }, 1000);
+        }
+      }
+      
+      // Modify refreshDetailedUptime to show animation
+      const originalRefreshFunction = refreshDetailedUptime;
+      refreshDetailedUptime = function() {
+        showRefreshAnimation();
+        originalRefreshFunction();
+      }
+      
+      // Auto refresh on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        refreshDetailedUptime();
+      });
+    </script>
   `;
   res.send(baseHTML("Bot Uptime Details", content));
 });

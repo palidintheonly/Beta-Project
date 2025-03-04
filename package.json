@@ -1,27 +1,26 @@
 {
   "name": "monkeybytes-discord-bot",
   "version": "1.0.0",
-  "description": "Discord bot for monitoring and managing MonkeyBytes Discord server",
-  "main": "bot.mjs",
+  "description": "Discord bot monitoring system for MonkeyBytes server",
   "type": "module",
+  "main": "index.mjs",
   "scripts": {
-    "start": "node bot.mjs"
+    "start": "node index.mjs",
+    "dev": "nodemon index.mjs"
   },
-  "keywords": [
-    "discord",
-    "bot",
-    "monitoring",
-    "monkeybytes"
-  ],
-  "author": "XpalidinX",
-  "company": "MonkeyBytes",
-  "license": "MIT",
   "dependencies": {
-    "discord.js": "^14.14.1",
+    "discord.js": "^14.13.0",
+    "@discordjs/rest": "^2.0.1",
+    "discord-api-types": "^0.37.50",
     "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   },
   "engines": {
     "node": ">=16.9.0"
   },
+  "author": "MonkeyBytes",
+  "license": "MIT",
   "private": true
 }
