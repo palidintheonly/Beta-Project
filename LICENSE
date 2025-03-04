@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025 XpalidinX
+Copyright (c) 2025 MonkeyBytes
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,30 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------
+
+This license applies to all files and components contained within the "Discord Monitoring Bot" software project, including but not limited to:
+
+1. The Discord bot client implementation
+2. Web management interface
+3. Data storage and processing components
+4. Logging and monitoring systems
+5. All associated documentation and configuration files
+
+This software contains functionality for:
+- Discord server monitoring and administration
+- Message logging and tracking
+- Audit log analysis
+- Server performance metrics
+- User activity tracking
+- Uptime monitoring
+
+No warranty is provided for the operation or security of this software. Users implementing this code are responsible for maintaining appropriate security practices, including but not limited to:
+
+1. Securing all API tokens and credentials
+2. Implementing proper authentication for administrative interfaces
+3. Ensuring compliance with Discord's Terms of Service
+4. Maintaining appropriate data retention policies
+
+For inquiries regarding this software, please contact the copyright holder.

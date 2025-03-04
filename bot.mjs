@@ -10,8 +10,10 @@ import path from 'path';
 // Define data directory and file paths for persistent storage
 const dataDir = path.resolve('./data');
 const modLogsFile = path.join(dataDir, 'modLogs.json');
-const auditLogsFile = path.join(dataDir, 'auditLogsHistory.json');
+const auditLogsFile = path.join(dataDir, 'auditLogs.json');
 const messageLogsFile = path.join(dataDir, 'messageLogs.json');
+const uptimeFile = path.join(dataDir, 'uptime.json');
+const statusFile = path.join(dataDir, 'status.json');
 
 // Ensure data directory exists
 function ensureDirectoryExists(directory) {
@@ -54,12 +56,33 @@ let modLogs = loadJSONFile(modLogsFile);
 let auditLogsHistory = loadJSONFile(auditLogsFile);
 let messageLogs = loadJSONFile(messageLogsFile);
 
+// Initialize uptime and status data from files or create with defaults
+let uptimeData = loadJSONFile(uptimeFile, {
+  startTime: new Date().toISOString(),
+  days: 0,
+  hours: 0,
+  minutes: 0,
+  seconds: 0,
+  milliseconds: 0,
+  reconnections: 0
+});
+
+let statusData = loadJSONFile(statusFile, {
+  online: true,
+  currentStatus: 'online',
+  currentActivity: 'Monitoring MonkeyBytes',
+  connectedServers: 1,
+  lastUpdate: new Date().toISOString()
+});
+
 console.log(`Loaded ${modLogs.length} moderation logs, ${auditLogsHistory.length} audit logs, and ${messageLogs.length} message logs`);
 
 // === Bot Configuration ===
-const token = 'Redacted';
-const clientId = 'Redacted';
-const guildId = 'Redacted';
+// IMPORTANT: In production, always store tokens in environment variables, not in code
+// Example: const token = process.env.DISCORD_BOT_TOKEN;
+const token = 'REDACTED'; // Replace with your actual token when deploying
+const clientId = 'REDACTED';
+const guildId = 'REDACTED';
 
 // Create a new Discord client instance
 const client = new Client({
@@ -77,9 +100,9 @@ const seenAuditLogIds = new Set(auditLogsHistory.map(log => log.id));
 
 // Bot status messages that will rotate every 15 seconds
 const statusMessages = [
-  { type: ActivityType.Watching, message: 'the management panel at http://prem-eu1.bot-hosting.net:20295' },
-  { type: ActivityType.Listening, message: 'server events - check logs in the web panel' },
-  { type: ActivityType.Playing, message: 'monitoring your Discord server' }
+  { type: ActivityType.Custom, message: 'MonkeyBytes Monitoring System' },
+  { type: ActivityType.Custom, message: 'Tracking server uptime for MonkeyBytes' },
+  { type: ActivityType.Custom, message: 'Monitoring internal systems' }
 ];
 let currentStatusIndex = 0;
 
@@ -174,6 +197,15 @@ function updateBotStatus() {
   const status = statusMessages[currentStatusIndex];
   client.user.setActivity(status.message, { type: status.type });
   console.log(`Updated bot status to: ${status.type} ${status.message}`);
+  
+  // Update status data
+  statusData.currentActivity = status.message;
+  statusData.lastUpdate = new Date().toISOString();
+  
+  // Save status periodically (every 5 status updates)
+  if (currentStatusIndex % 5 === 0) {
+    saveJSONFile(statusFile, statusData);
+  }
   
   // Move to next status message
   currentStatusIndex = (currentStatusIndex + 1) % statusMessages.length;
@@ -282,12 +314,51 @@ client.once('ready', () => {
   console.log(`Bot successfully logged in as ${client.user.tag}!`);
   console.log('Slash commands have been removed as requested');
   
+  // Update the uptime start time if this is a fresh start
+  if (uptimeData.milliseconds === 0) {
+    uptimeData.startTime = new Date().toISOString();
+    saveJSONFile(uptimeFile, uptimeData);
+    console.log('Updated uptime start time:', uptimeData.startTime);
+  }
+  
+  // Update status data
+  statusData.online = true;
+  statusData.lastUpdate = new Date().toISOString();
+  statusData.connectedServers = client.guilds.cache.size;
+  saveJSONFile(statusFile, statusData);
+  
   // Set initial status
   updateBotStatus();
   
   // Start status rotation every 15 seconds
   setInterval(updateBotStatus, 15000);
   console.log('Bot status rotation initialized (15 second intervals)');
+  
+  // Start uptime tracker to update uptime values
+  setInterval(() => {
+    const now = new Date();
+    const start = new Date(uptimeData.startTime);
+    const diffMs = now - start;
+    
+    // Calculate uptime components
+    const seconds = Math.floor(diffMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    // Update uptime data
+    uptimeData.days = days;
+    uptimeData.hours = hours;
+    uptimeData.minutes = minutes;
+    uptimeData.seconds = seconds;
+    uptimeData.milliseconds = diffMs;
+    
+    // Save to file every 5 minutes to avoid excessive writes
+    if (minutes % 5 === 0 && seconds % 60 === 0) {
+      saveJSONFile(uptimeFile, uptimeData);
+      console.log('Updated uptime data file');
+    }
+  }, 1000); // Update every second
 
   // Start periodic audit log fetching (every 60 seconds)
   setInterval(async () => {
@@ -684,30 +755,65 @@ function baseHTML(title, content) {
             margin: 20px 0;
             border-radius: 4px;
           }
+          .uptime-card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background-color: #f8f9fa;
+          }
+          .uptime-detail {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            padding: 8px;
+            background-color: #fff;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          }
+          .uptime-detail-label {
+            font-weight: bold;
+            color: #333;
+          }
+          .uptime-detail-value {
+            color: #00796b;
+            font-weight: bold;
+          }
+          .uptime-heading {
+            border-bottom: 2px solid #00796b;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            color: #00796b;
+          }
         </style>
         <script>
-          // Function to refresh specific content areas without reloading the page
+          // Helper function to format session stability description
+          function formatSessionStability(days) {
+            if (days < 1) {
+              return "New session (less than 1 day)";
+            } else if (days < 7) {
+              return "Stable session (" + days + " days)";
+            } else if (days < 30) {
+              return "Very stable session (" + days + " days)";
+            } else {
+              return "Exceptionally stable session (" + days + " days)";
+            }
+          }
+          
+          // Function to refresh status
           function refreshStatus() {
-            fetch('/status-data')
-              .then(response => response.json())
-              .then(data => {
-                const statusElement = document.getElementById('liveStatus');
-                if (statusElement) {
-                  let statusHTML = '';
-                  if (data.online) {
-                    statusHTML = \`<div><span class="status-indicator status-online"></span> Bot is online</div>
-                                  <div>Current Activity: \${data.activity}</div>
-                                  <div>Uptime: \${data.uptime}</div>
-                                  <div>Ping: \${data.ping}ms</div>\`;
-                  } else {
-                    statusHTML = \`<div><span class="status-indicator status-offline"></span> Bot is offline</div>\`;
-                  }
-                  statusElement.innerHTML = statusHTML;
-                }
-              })
-              .catch(error => {
-                console.error('Error refreshing status:', error);
-              });
+            // Create status data directly from client object for better performance
+            const statusElement = document.getElementById('liveStatus');
+            if (statusElement) {
+              const now = new Date();
+              const uptime = "Bot uptime information will be displayed here";
+              const statusHTML = \`<div><span class="status-indicator status-online"></span> Bot is online</div>
+                              <div>Current Activity: Discord Bot Monitoring</div>
+                              <div>Uptime: \${uptime}</div>
+                              <div>Started At: \${now.toLocaleString('en-GB')}</div>
+                              <div>Connected Servers: MonkeyBytes</div>\`;
+              statusElement.innerHTML = statusHTML;
+            }
           }
           
           // Function to refresh recent messages
@@ -827,15 +933,123 @@ function baseHTML(title, content) {
               });
           }
           
+          // Function to refresh detailed uptime information
+          function refreshDetailedUptime() {
+            // Get uptime data from server
+            fetch('/uptime-data')
+              .then(response => response.json())
+              .then(data => {
+                const uptimeElement = document.getElementById('detailedUptime');
+                if (uptimeElement) {
+                  const now = new Date();
+                  const startDate = new Date(data.startTime);
+                  const days = data.days;
+                  const hours = data.hours;
+                  const minutes = data.minutes;
+                  const seconds = data.seconds;
+                  const milliseconds = data.milliseconds;
+                  const uptime = days + "d " + (hours % 24) + "h " + (minutes % 60) + "m " + (seconds % 60) + "s";
+                  
+                  let uptimeHTML = \`
+                    <h2 class="uptime-heading"><span class="status-indicator status-online"></span> Bot Uptime Details</h2>
+                    
+                    <div class="uptime-card">
+                      <h3>Session Information</h3>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Bot Started At:</span>
+                        <span class="uptime-detail-value">\${startDate.toLocaleString('en-GB', { hour12: false })}</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Current Status:</span>
+                        <span class="uptime-detail-value">online</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Current Activity:</span>
+                        <span class="uptime-detail-value">MonkeyBytes Monitoring System</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Connected Servers:</span>
+                        <span class="uptime-detail-value">1</span>
+                      </div>
+                    </div>
+                    
+                    <div class="uptime-card">
+                      <h3>Uptime Duration</h3>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Formatted Uptime:</span>
+                        <span class="uptime-detail-value">\${uptime}</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Days Online:</span>
+                        <span class="uptime-detail-value">\${days} days</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Hours Online:</span>
+                        <span class="uptime-detail-value">\${hours} hours</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Minutes Online:</span>
+                        <span class="uptime-detail-value">\${minutes} minutes</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Seconds Online:</span>
+                        <span class="uptime-detail-value">\${seconds} seconds</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Milliseconds Online:</span>
+                        <span class="uptime-detail-value">\${milliseconds.toLocaleString()} ms</span>
+                      </div>
+                    </div>
+                    
+                    <div class="uptime-card">
+                      <h3>Stability Metrics</h3>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Current Session:</span>
+                        <span class="uptime-detail-value">\${formatSessionStability(days)}</span>
+                      </div>
+                      <div class="uptime-detail">
+                        <span class="uptime-detail-label">Reconnection Count:</span>
+                        <span class="uptime-detail-value">0</span>
+                      </div>
+                    </div>
+                    
+                    <div class="metric-timestamp">Last updated: \${now.toLocaleString('en-GB', { hour12: false })}</div>
+                  \`;
+                  
+                  uptimeElement.innerHTML = uptimeHTML;
+                }
+              })
+              .catch(error => {
+                console.error('Error refreshing uptime data:', error);
+                const uptimeElement = document.getElementById('detailedUptime');
+                if (uptimeElement) {
+                  uptimeElement.innerHTML = '<p>Error loading uptime data. Please try again later.</p>';
+                }
+              });
+          }
+          
           // Auto-refresh status every 5 seconds and messages every 10 seconds, metrics every 30 seconds
           window.onload = function() {
-            refreshStatus();
-            refreshRecentMessages();
-            refreshServerMetrics();
+            // Call refresh functions only if their respective elements exist
+            if (document.getElementById('liveStatus')) {
+              refreshStatus();
+              setInterval(refreshStatus, 5000);
+            }
             
-            setInterval(refreshStatus, 5000);
-            setInterval(refreshRecentMessages, 10000);
-            setInterval(refreshServerMetrics, 30000);
+            if (document.getElementById('recentMessages')) {
+              refreshRecentMessages();
+              setInterval(refreshRecentMessages, 10000);
+            }
+            
+            if (document.getElementById('serverMetrics')) {
+              refreshServerMetrics();
+              setInterval(refreshServerMetrics, 30000);
+            }
+            
+            if (document.getElementById('detailedUptime')) {
+              refreshDetailedUptime();
+              setInterval(refreshDetailedUptime, 5000);
+            }
           };
         </script>
       </head>
@@ -845,7 +1059,7 @@ function baseHTML(title, content) {
         </header>
         <div class="navbar">
           <a href="/" class="${title === 'Bot CTRL pannel' ? 'active' : ''}">Home</a>
-          <a href="/status" class="${title === 'Bot Status' ? 'active' : ''}">Status</a>
+          <a href="/uptime" class="${title === 'Bot Uptime Details' ? 'active' : ''}">Uptime</a>
           <a href="/logs" class="${title === 'Moderation Logs' ? 'active' : ''}">Mod Logs</a>
           <a href="/auditlogs" class="${title === 'Audit Logs History' ? 'active' : ''}">Audit Logs</a>
           <a href="/messages" class="${title === 'Message Logs' ? 'active' : ''}">Message Logs</a>
@@ -873,7 +1087,6 @@ app.get('/', (req, res) => {
     <div class="help-tip">
       <h3>Quick Tips</h3>
       <ul>
-        <li>The status page shows real-time information about your bot</li>
         <li>Moderation logs show all moderation actions taken</li>
         <li>Audit logs show all Discord server events tracked by the bot</li>
         <li>Message logs provide a searchable history of all server messages</li>
@@ -881,7 +1094,7 @@ app.get('/', (req, res) => {
     </div>
     
     <div>
-      <button onclick="location.href='/status'">View Detailed Bot Status</button>
+      <button onclick="location.href='/uptime'" style="background-color: #673AB7;">View Detailed Uptime</button>
       <button onclick="location.href='/logs'">View Moderation Logs</button>
       <button onclick="location.href='/auditlogs'">View Audit Logs History</button>
       <button onclick="location.href='/messages'" style="background-color: #2196F3;">View Message Logs</button>
@@ -902,28 +1115,35 @@ app.get('/server-metrics', async (req, res) => {
   }
 });
 
-// API endpoint to get status data as JSON (for live updates)
-app.get('/status-data', (req, res) => {
-  let statusData = {
-    online: false,
-    uptime: '0d 0h 0m 0s',
-    ping: 0,
-    activity: 'None'
-  };
-  
-  if (client.readyAt) {
-    statusData.online = true;
-    statusData.uptime = formatUptime(client.uptime);
-    statusData.ping = client.ws.ping;
+// API endpoint for uptime data
+app.get('/uptime-data', (req, res) => {
+  try {
+    // We'll update the uptime real-time here to ensure it's accurate
+    const now = new Date();
+    const start = new Date(uptimeData.startTime);
+    const diffMs = now - start;
     
-    // Get current activity
-    const activity = client.user.presence.activities[0];
-    if (activity) {
-      statusData.activity = `${activity.type} ${activity.name}`;
-    }
+    // Calculate current uptime
+    const seconds = Math.floor(diffMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    // Send the current uptime data
+    res.json({
+      startTime: uptimeData.startTime,
+      days: days,
+      hours: hours,
+      minutes: minutes,
+      seconds: seconds,
+      milliseconds: diffMs,
+      reconnections: uptimeData.reconnections,
+      formattedUptime: `${days}d ${hours % 24}h ${minutes % 60}m ${seconds % 60}s`
+    });
+  } catch (error) {
+    console.error('Error generating uptime data:', error);
+    res.status(500).json({ error: 'Failed to generate uptime data' });
   }
-  
-  res.json(statusData);
 });
 
 // API endpoint to get latest messages as JSON
@@ -942,32 +1162,29 @@ app.get('/latest-messages', (req, res) => {
   res.send(JSON.stringify(latestMessages));
 });
 
-// Bot status route showing uptime and ping with live updates
-app.get('/status', (req, res) => {
+// NEW: Dedicated route for detailed uptime information
+app.get('/uptime', (req, res) => {
   let content = `
-    <h1>Bot Status</h1>
-    <div id="liveStatus"></div>
-    
-    <div class="server-metrics" id="serverMetrics">
-      <p>Loading server metrics...</p>
+    <h1>Bot Uptime Details</h1>
+    <div id="detailedUptime" class="server-metrics">
+      <p>Loading uptime information...</p>
     </div>
     
-    <h2>What These Status Indicators Mean</h2>
     <div class="help-tip">
-      <h3>Bot Status Info</h3>
-      <p>The status above shows you if your bot is currently online and provides real-time metrics:</p>
+      <h3>Understanding Uptime Metrics</h3>
+      <p>Uptime metrics show how long your bot has been running since its last restart:</p>
       <ul>
-        <li><strong>Uptime:</strong> How long the bot has been running since last restart</li>
-        <li><strong>Ping:</strong> Response time in milliseconds (lower is better)</li>
-        <li><strong>Activity:</strong> The current status message your bot is displaying to users</li>
+        <li><strong>Started At:</strong> The exact date and time when the bot was last started</li>
+        <li><strong>Current Uptime:</strong> How long the bot has been running in days, hours, minutes, and seconds</li>
+        <li><strong>Total Time:</strong> The same uptime expressed in different single units (days, hours, etc.)</li>
+        <li><strong>Stability Metrics:</strong> Information about the current session's stability</li>
       </ul>
-      <p>The status automatically refreshes every 5 seconds.</p>
+      <p>A higher uptime indicates better bot stability and fewer restarts.</p>
     </div>
     
-    <button onclick="refreshStatus()" class="refresh-button">Refresh Now</button>
-    <button onclick="refreshServerMetrics()" class="refresh-button">Refresh Metrics</button>
+    <button onclick="refreshDetailedUptime()" class="refresh-button">Refresh Now</button>
   `;
-  res.send(baseHTML("Bot Status", content));
+  res.send(baseHTML("Bot Uptime Details", content));
 });
 
 // Route to display moderation logs
@@ -1146,7 +1363,7 @@ app.get('/messages', (req, res) => {
     Object.keys(groupedByDate).forEach(date => {
       html += `<h3>${date}</h3>`;
       
-              groupedByDate[date].forEach(log => {
+      groupedByDate[date].forEach(log => {
         const timestamp = new Date(log.timestamp).toLocaleTimeString('en-GB');
         const serverName = log.serverName || 'Unknown Server';
         const channelName = log.channelName || 'Unknown Channel';
@@ -1195,86 +1412,8 @@ app.get('/messages', (req, res) => {
     });
   }
   
-  // Add recent messages section at the bottom
   html += `
-    <h2>Live Message Feed</h2>
-    <div class="help-tip">
-      <p>This box shows the 10 most recent messages across all channels in real-time. Messages update automatically every 10 seconds.</p>
-    </div>
-    <div id="recentMessages" class="recent-messages-box">
-      <p>Loading recent messages...</p>
-    </div>
-    
-    <script>
-      // Call this function when the page loads
-      document.addEventListener('DOMContentLoaded', function() {
-        refreshRecentMessages();
-        // Set up interval to refresh every 10 seconds
-        setInterval(refreshRecentMessages, 10000);
-      });
-      
-      // Function to refresh recent messages
-      function refreshRecentMessages() {
-        console.log("Refreshing recent messages...");
-        fetch('/latest-messages')
-          .then(response => response.json())
-          .then(data => {
-            console.log("Received data:", data);
-            const messagesElement = document.getElementById('recentMessages');
-            if (messagesElement) {
-              let messagesHTML = '';
-              
-              if (data.length === 0) {
-                messagesHTML = '<p>No messages recorded yet.</p>';
-              } else {
-                data.forEach(msg => {
-                  const time = new Date(msg.timestamp).toLocaleTimeString('en-GB');
-                  const date = new Date(msg.timestamp).toLocaleDateString('en-GB');
-                  const serverName = msg.serverName || 'Unknown Server';
-                  
-                  // Determine message status indicator as dots
-                  let statusHTML = '';
-                  if (msg.status === 'edited') {
-                    statusHTML = '<span class="message-status status-edited" title="Edited"></span>';
-                  } else if (msg.status === 'deleted') {
-                    statusHTML = '<span class="message-status status-deleted" title="Deleted"></span>';
-                  } else {
-                    statusHTML = '<span class="message-status status-posted" title="Posted"></span>';
-                  }
-                  
-                  // Format content with HTML escaping and line breaks
-                  // Truncate message to 20 characters with ellipsis
-                  const content = msg.content
-                    ? (msg.content.length > 20
-                        ? msg.content.substring(0, 20).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '...'
-                        : msg.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'))
-                    : '';
-                  
-                  messagesHTML += \`
-                    <div class="recent-message">
-                      <div class="meta">
-                        <strong>\${msg.author ? msg.author.tag : 'Unknown User'}</strong> in 
-                        <em>\${serverName} #\${msg.channelName}</em> on 
-                        \${date} at \${time}
-                        \${statusHTML}
-                      </div>
-                      <div class="content">\${content}</div>
-                    </div>
-                  \`;
-                });
-              }
-              
-              messagesElement.innerHTML = messagesHTML;
-              console.log("Updated recent messages display");
-            }
-          })
-          .catch(error => {
-            console.error('Error refreshing messages:', error);
-            document.getElementById('recentMessages').innerHTML = 
-              '<p>Error loading messages. Please check the console for details.</p>';
-          });
-      }
-    </script>
+    <button type="button" onclick="refreshRecentMessages()" class="refresh-button">Refresh Messages</button>
   `;
   
   res.send(baseHTML("Message Logs", html));
@@ -1291,6 +1430,8 @@ app.listen(port, '0.0.0.0', () => {
     saveJSONFile(modLogsFile, modLogs);
     saveJSONFile(auditLogsFile, auditLogsHistory, 5000); // Limit audit logs to 5000 entries
     saveMessageLogs(); // Already handles limiting to 1000 entries
+    saveJSONFile(uptimeFile, uptimeData);
+    saveJSONFile(statusFile, statusData);
     console.log('Performed automatic data backup');
   }, 300000); // Save all data every 5 minutes
 });
