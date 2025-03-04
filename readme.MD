@@ -116,7 +116,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Credits
 
-Developed by [MonkeyBytes](https://github.com/monkeybytes)
+Developed by [MonkeyBytes](https://github.com/palidintheonly)
 
 ---
 
