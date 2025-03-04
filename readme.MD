@@ -1,29 +1,27 @@
-# ByteTracker - Discord Monitoring Bot by MonkeyBytes
+# ByteTracker - Discord Monitoring Bot 🤖
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-2.0.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-A comprehensive Discord bot for monitoring and logging server activities with a web-based management interface. ByteTracker captures messages, audit logs, and server metrics in real-time.
+A comprehensive Discord monitoring bot that captures server activity with a real-time web dashboard. ByteTracker logs messages, tracks audit events, and monitors server performance metrics.
 
-![ByteTracker Dashboard](https://via.placeholder.com/800x400?text=ByteTracker+Dashboard)
+## 🔍 Key Features
 
-## Features
+- **💬 Message Logging:** Captures all messages with edit/delete history and attachment tracking
+- **📝 Audit Log Monitoring:** Records server events (member joins, channel creation, role changes, etc.)
+- **📊 Server Performance:** Monitors CPU, memory, and disk usage of your host server
+- **🌐 Real-Time Dashboard:** Web interface with live updates for all logs and metrics
+- **💾 Persistent Storage:** Stores data in JSON files that survive bot restarts
+- **🔄 Status Rotation:** Customizable rotating status messages
 
-- **Message Logging:** Tracks all messages with editing and deletion history
-- **Audit Log Monitoring:** Tracks server events like member joins, channel creation, role changes
-- **Server Metrics:** Monitors CPU, memory, and disk usage of the hosting server
-- **Web Dashboard:** Easy-to-use web interface to view all logs and metrics
-- **Data Persistence:** Stores logs in JSON files for reliability across restarts
-- **Auto-rotating Status:** Displays useful information as bot status messages
-
-## Requirements
+## ⚙️ Requirements
 
 - Node.js v16.0.0 or higher
-- Discord.js v14.0.0 or higher
-- A Discord bot token and application
-- Server permissions for reading messages and audit logs
+- Discord.js v14.0.0
+- Discord bot token with appropriate permissions
+- Server with ability to expose HTTP port for web dashboard
 
-## Installation
+## 🚀 Installation
 
 1. Clone the repository:
 ```bash
@@ -31,12 +29,12 @@ git clone https://github.com/monkeybytes/bytetracker.git
 cd bytetracker
 ```
 
-2. Install dependencies:
+2. Install required dependencies:
 ```bash
 npm install discord.js express fs os child_process path
 ```
 
-3. Create a `.env` file in the root directory with your bot token:
+3. Create a `.env` file in the root directory:
 ```
 DISCORD_TOKEN=your_bot_token_here
 CLIENT_ID=your_client_id_here
@@ -49,60 +47,76 @@ PORT=20295
 node bot.mjs
 ```
 
-## Configuration
+## ⚠️ Security Note
 
-Edit the configuration in the bot.mjs file:
+The bot.mjs file contains a placeholder Discord token. Before deploying:
+
+1. Change the redacted token to your new Discord bot token (this must remain hardcoded)
+2. Secure your web dashboard with a reverse proxy for authentication
+
+## 🛠️ Configuration Options
+
+Edit bot.mjs to customize these settings:
 
 ```javascript
-// Change the port for the web interface
+// Web dashboard port
 const port = process.env.PORT || 20295;
 
-// Change status rotation interval (in milliseconds)
+// Status rotation interval (milliseconds)
 setInterval(updateBotStatus, 15000); 
 
-// Change automatic backup interval (in milliseconds)
+// Data backup interval (milliseconds)
 setInterval(() => {
-  // File backup logic
+  // Backup logic
 }, 300000); // 5 minutes
+
+// Status messages
+const statusMessages = [
+  { type: ActivityType.Custom, message: "Your custom message" },
+  // Add more status messages here
+];
 ```
 
-## Usage
+## 🖥️ Using the Web Dashboard
 
-### Web Dashboard
+Access your dashboard at `http://your-server-ip:PORT`
 
-Access the web dashboard at `http://your-server-ip:20295`
+Where PORT is the value you set in your configuration (default is 20295, but you should set this to your own preferred port - some hosting environments may not require specifying a port at all)
 
-The dashboard includes:
-- **Home:** Overview of bot status and quick navigation
-- **Status:** Real-time bot status and server metrics
-- **Mod Logs:** View moderation actions taken
-- **Audit Logs:** History of server changes and actions
-- **Message Logs:** Searchable log of all messages with filters
+### Dashboard Sections:
 
-### Bot Features
+- **🏠 Home:** Overview and quick navigation
+- **📊 Status:** Real-time bot status and server metrics
+- **⏱️ Uptime:** Detailed bot uptime statistics
+- **🔨 Mod Logs:** View moderation actions
+- **📜 Audit Logs:** Server event history
+- **💬 Message Logs:** Searchable message history with filters and live feed
 
-- **Message Logging:** Automatically tracks all messages, edits, and deletions
-- **Metric Monitoring:** Automatically collects server performance metrics
-- **Audit Log Tracking:** Periodically checks for new audit log entries
+### Auto-Refresh Features:
 
-## Data Storage
+- Bot status: Updates every 5 seconds
+- Recent messages: Updates every 10 seconds
+- Server metrics: Updates every 30 seconds
+
+## 💾 Data Storage
 
 Logs are stored in the `./data` directory:
+
 - `modLogs.json` - Moderation actions
-- `auditLogsHistory.json` - Server audit logs
-- `messageLogs.json` - Message history
+- `auditLogsHistory.json` - Server audit logs (limited to 5000 entries)
+- `messageLogs.json` - Message history (limited to 1000 entries)
+- `uptime.json` - Bot uptime statistics
+- `status.json` - Current bot status information
 
-Data is automatically backed up every 5 minutes and limited to prevent excessive file growth:
-- Message logs: Limited to 1000 entries
-- Audit logs: Limited to 5000 entries
+Data is automatically backed up every 5 minutes.
 
-## Security Notes
+## 🛡️ Privacy Considerations
 
-- The web interface has no built-in authentication - secure it with a reverse proxy
-- Bot token should be stored in environment variables, not hardcoded
-- Logs contain message content - ensure GDPR compliance if applicable
+- Message logs contain the full content of all messages
+- User IDs and usernames are stored in the logs
+- Consider GDPR implications if deployed in regions where it applies
 
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b new-feature`
@@ -110,11 +124,11 @@ Data is automatically backed up every 5 minutes and limited to prevent excessive
 4. Push to the branch: `git push origin new-feature`
 5. Submit a pull request
 
-## License
+## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Credits
+## 👨‍💻 Credits
 
 Developed by [MonkeyBytes](https://github.com/palidintheonly)
 
