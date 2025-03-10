@@ -4,17 +4,10 @@ import fs from 'fs';
 
 // Import required modules
 import os from 'os';
+import { exec } from 'child_process';
 import path from 'path';
 import { REST } from '@discordjs/rest';
 import { Routes } from 'discord-api-types/v9';
-
-// Import additional modules for security improvements
-import dotenv from 'dotenv'; // For env variables - npm install dotenv
-import basicAuth from 'express-basic-auth'; // For basic auth - npm install express-basic-auth
-import si from 'systeminformation'; // For safe system metrics - npm install systeminformation
-
-// Load environment variables
-dotenv.config();
 
 // Define data directory and file paths for persistent storage
 const dataDir = path.resolve('./data');
@@ -23,11 +16,6 @@ const auditLogsFile = path.join(dataDir, 'auditLogs.json');
 const messageLogsFile = path.join(dataDir, 'messageLogs.json');
 const uptimeFile = path.join(dataDir, 'uptime.json');
 const statusFile = path.join(dataDir, 'status.json');
-
-// Define maximum array sizes to prevent memory leaks
-const MAX_MESSAGE_LOGS = 1000;
-const MAX_AUDIT_LOGS = 5000;
-const MAX_MOD_LOGS = 1000;
 
 // Add Discord API status tracking
 let discordApiStatus = {
@@ -100,10 +88,11 @@ let statusData = loadJSONFile(statusFile, {
 console.log(`Loaded ${modLogs.length} moderation logs, ${auditLogsHistory.length} audit logs, and ${messageLogs.length} message logs`);
 
 // === Bot Configuration ===
-// Get tokens from environment variables
-const token = process.env.DISCORD_BOT_TOKEN; // Use environment variable
-const clientId = process.env.CLIENT_ID || '1346197960513425489';
-const guildId = process.env.GUILD_ID || '1269949849810501643';
+// IMPORTANT: In production, always store tokens in environment variables, not in code
+// Example: const token = process.env.DISCORD_BOT_TOKEN;
+const token = 'MTM0NjE5*****'; // Replace with your actual token when deploying
+const clientId = '1346197*****';
+const guildId = '126994984*****';
 
 // Create a new Discord client instance
 const client = new Client({
@@ -244,61 +233,72 @@ function updateBotStatus() {
   currentStatusIndex = (currentStatusIndex + 1) % statusMessages.length;
 }
 
-// Get server metrics - IMPROVED SAFER VERSION
-async function getServerMetrics() {
-  try {
-    // Get metrics using the systeminformation library
-    const [cpuLoad, memData, diskData, osInfo] = await Promise.all([
-      si.currentLoad(),
-      si.mem(),
-      si.fsSize(),
-      si.osInfo()
-    ]);
-    
-    // Format the data
-    const metrics = {
-      cpu: cpuLoad.currentLoad.toFixed(2),
-      memory: {
-        total: (memData.total / (1024 * 1024 * 1024)).toFixed(2), // GB
-        free: (memData.free / (1024 * 1024 * 1024)).toFixed(2),
-        used: ((memData.total - memData.free) / (1024 * 1024 * 1024)).toFixed(2),
-        percentUsed: ((memData.used / memData.total) * 100).toFixed(2)
-      },
-      disk: {
-        total: "N/A",
-        used: "N/A",
-        free: "N/A",
-        percentUsed: 0
-      },
-      uptime: formatUptime(os.uptime() * 1000),
-      timestamp: new Date().toLocaleString('en-GB', { hour12: false }),
-      load: os.loadavg()
-    };
-    
-    // Add disk info if available
-    if (diskData && diskData.length > 0) {
-      const mainDisk = diskData[0]; // Using first disk
-      metrics.disk = {
-        total: (mainDisk.size / (1024 * 1024 * 1024)).toFixed(2) + " GB",
-        used: (mainDisk.used / (1024 * 1024 * 1024)).toFixed(2) + " GB",
-        free: ((mainDisk.size - mainDisk.used) / (1024 * 1024 * 1024)).toFixed(2) + " GB",
-        percentUsed: ((mainDisk.used / mainDisk.size) * 100).toFixed(2)
+// Get server metrics
+function getServerMetrics() {
+  return new Promise((resolve) => {
+    try {
+      // Memory info
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const usedMem = totalMem - freeMem;
+      
+      const metrics = {
+        cpu: 0,
+        memory: {
+          total: (totalMem / (1024 * 1024 * 1024)).toFixed(2), // GB
+          free: (freeMem / (1024 * 1024 * 1024)).toFixed(2),
+          used: (usedMem / (1024 * 1024 * 1024)).toFixed(2),
+          percentUsed: ((usedMem / totalMem) * 100).toFixed(2)
+        },
+        disk: {
+          total: "N/A",
+          used: "N/A",
+          free: "N/A",
+          percentUsed: 0
+        },
+        uptime: formatUptime(os.uptime() * 1000),
+        timestamp: new Date().toLocaleString('en-GB', { hour12: false }),
+        load: os.loadavg()
       };
+      
+      // Try to get CPU usage with exec
+      exec("top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\\([0-9.]*\\)%* id.*/\\1/' | awk '{print 100 - $1}'", (cpuError, cpuStdout) => {
+        if (!cpuError) {
+          metrics.cpu = parseFloat(cpuStdout).toFixed(2);
+        } else {
+          // Fallback for CPU if command fails
+          metrics.cpu = Math.floor(os.loadavg()[0] * 10); // Rough estimate based on load
+        }
+        
+        // Try to get disk info with exec
+        exec("df -h / | awk 'NR==2 {print $2,$3,$4,$5}'", (diskError, diskStdout) => {
+          if (!diskError && diskStdout) {
+            const parts = diskStdout.trim().split(/\s+/);
+            if (parts.length >= 4) {
+              metrics.disk.total = parts[0];
+              metrics.disk.used = parts[1];
+              metrics.disk.free = parts[2];
+              metrics.disk.percentUsed = parseInt(parts[3].replace('%', ''));
+            }
+          }
+          
+          // Return the metrics
+          resolve(metrics);
+        });
+      });
+    } catch (error) {
+      console.error('Error in getServerMetrics:', error);
+      // Return basic metrics if there's an error
+      resolve({
+        cpu: 0,
+        memory: { total: "N/A", used: "N/A", free: "N/A", percentUsed: 0 },
+        disk: { total: "N/A", used: "N/A", free: "N/A", percentUsed: 0 },
+        uptime: formatUptime(process.uptime() * 1000),
+        timestamp: new Date().toLocaleString('en-GB'),
+        load: [0, 0, 0]
+      });
     }
-    
-    return metrics;
-  } catch (error) {
-    console.error('Error getting system metrics:', error);
-    // Return fallback metrics on error
-    return {
-      cpu: 0,
-      memory: { total: "N/A", used: "N/A", free: "N/A", percentUsed: 0 },
-      disk: { total: "N/A", used: "N/A", free: "N/A", percentUsed: 0 },
-      uptime: formatUptime(process.uptime() * 1000),
-      timestamp: new Date().toLocaleString('en-GB'),
-      load: [0, 0, 0]
-    };
-  }
+  });
 }
 
 // Function to save data to a JSON file
@@ -328,7 +328,7 @@ function saveJSONFile(filePath, data, maxEntries = null) {
 // Function to save message logs to file
 function saveMessageLogs() {
   // Keep only the most recent 1000 messages to prevent the file from growing too large
-  saveJSONFile(messageLogsFile, messageLogs, MAX_MESSAGE_LOGS);
+  saveJSONFile(messageLogsFile, messageLogs, 1000);
 }
 
 // Add a function to track reconnections and update Discord status
@@ -425,14 +425,9 @@ client.once('ready', () => {
         }
       });
       
-      // Trim audit logs if they exceed the maximum size
-      if (auditLogsHistory.length > MAX_AUDIT_LOGS) {
-        auditLogsHistory = auditLogsHistory.slice(-MAX_AUDIT_LOGS);
-      }
-      
       if (newEntries) {
         console.log(`Found ${newEntryCount} new audit log entries, saving to file`);
-        saveJSONFile(auditLogsFile, auditLogsHistory, MAX_AUDIT_LOGS);
+        saveJSONFile(auditLogsFile, auditLogsHistory);
       } else {
         console.log('No new audit log entries found');
       }
@@ -492,7 +487,7 @@ client.on('messageDelete', async (message) => {
   }
 });
 
-// Message logging event handler - IMPROVED WITH MEMORY MANAGEMENT
+// Message logging event handler
 client.on('messageCreate', async (message) => {
   try {
     // Ignore bot messages to prevent logging our own responses
@@ -542,11 +537,6 @@ client.on('messageCreate', async (message) => {
       deletedTimestamp: null
     });
     
-    // Trim array if it exceeds the maximum size
-    if (messageLogs.length > MAX_MESSAGE_LOGS) {
-      messageLogs = messageLogs.slice(-MAX_MESSAGE_LOGS);
-    }
-    
     console.log(`Logged message from ${author.tag} in ${channelName}`);
     
     // Save logs periodically (every 10 messages)
@@ -560,24 +550,11 @@ client.on('messageCreate', async (message) => {
 
 // Log in to Discord
 console.log('Attempting to log in to Discord...');
-client.login(token).catch(error => {
-  console.error('Failed to log in to Discord:', error);
-  console.log('Please make sure you have set the DISCORD_BOT_TOKEN environment variable.');
-  process.exit(1);
-});
+client.login(token);
 
 // === Web Management Interface using Express ===
 const app = express();
-const port = process.env.WEB_PORT || 20295;
-
-// Add basic authentication
-app.use(basicAuth({
-  users: { 
-    [process.env.ADMIN_USERNAME || 'admin']: process.env.ADMIN_PASSWORD || 'your_secure_password' 
-  },
-  challenge: true,
-  realm: 'MonkeyBytes Bot Management Interface'
-}));
+const port = 20295;
 
 // Base HTML template with light blue transparent background and button styling
 function baseHTML(title, content) {
@@ -1681,15 +1658,15 @@ app.get('/messages', (req, res) => {
 
 // Start the web server on all network interfaces
 app.listen(port, '0.0.0.0', () => {
-  console.log(`Web management interface running at http://localhost:${port}`);
+  console.log(`Web management interface running at http://prem-eu1.bot-hosting.net:${port}`);
   console.log('Management panel is now "live" with auto-refreshing status');
   console.log(`Using data directory: ${dataDir}`);
   
   // Set up periodic saves for all data
   setInterval(() => {
-    saveJSONFile(modLogsFile, modLogs, MAX_MOD_LOGS);
-    saveJSONFile(auditLogsFile, auditLogsHistory, MAX_AUDIT_LOGS);
-    saveMessageLogs(); // Already handles limiting to MAX_MESSAGE_LOGS entries
+    saveJSONFile(modLogsFile, modLogs);
+    saveJSONFile(auditLogsFile, auditLogsHistory, 5000); // Limit audit logs to 5000 entries
+    saveMessageLogs(); // Already handles limiting to 1000 entries
     saveJSONFile(uptimeFile, uptimeData);
     saveJSONFile(statusFile, statusData);
     console.log('Performed automatic data backup');

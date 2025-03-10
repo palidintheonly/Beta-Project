@@ -1,34 +1,20 @@
 {
-  "name": "monkeybytes-discord-bot",
-  "version": "1.0.0",
-  "description": "Discord monitoring bot for MonkeyBytes server",
-  "main": "index.js",
-  "type": "module",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
-  },
-  "dependencies": {
-    "@discordjs/rest": "^1.7.1",
-    "discord-api-types": "^0.37.51",
-    "discord.js": "^14.11.0",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "express-basic-auth": "^1.2.1",
-    "systeminformation": "^5.18.15"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  },
-  "engines": {
-    "node": ">=16.9.0"
-  },
-  "keywords": [
-    "discord",
-    "bot",
-    "monitoring",
-    "moderation"
-  ],
-  "author": "",
-  "license": "ISC"
-}
+    "name": "monkeybytes-auth-bot",
+    "version": "1.0.0",
+    "description": "Discord Authentication Bot for MonkeyBytes",
+    "main": "monkeybytes-auth-bot.mjs",
+    "type": "module",
+    "scripts": {
+      "start": "node monkeybytes-auth-bot.mjs"
+    },
+    "dependencies": {
+      "discord.js": "^14.11.0",
+      "express": "^4.18.2",
+      "express-session": "^1.17.3",
+      "passport": "^0.6.0",
+      "passport-discord": "^0.1.4"
+    },
+    "author": "MonkeyBytes Tech",
+    "license": "UNLICENSED",
+    "private": true
+  }
