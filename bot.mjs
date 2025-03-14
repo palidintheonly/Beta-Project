@@ -15,39 +15,38 @@ import os from 'os';
 
 // ==================== CONFIGURATION ====================
 const config = {
-  // User provided credentials - REPLACE WITH YOUR ACTUAL CREDENTIALS
-  clientId: 'YOUR_CLIENT_ID',
-  clientSecret: 'YOUR_CLIENT_SECRET',
-  token: 'YOUR_BOT_TOKEN',
+  // User provided credentials - SANITIZED
+  clientId: 'DISCORD_CLIENT_ID',
+  clientSecret: 'DISCORD_CLIENT_SECRET',
+  token: 'DISCORD_BOT_TOKEN',
 
   // Server configuration
   port: 20295,
-  redirectUri: 'http://your-domain.com:20295/auth/callback',
-  serverUrl: 'http://your-domain.com:20295',
+  redirectUri: 'http://example.com:20295/auth/callback',
+  serverUrl: 'http://example.com:20295',
 
-  // Discord IDs
-  guildId: 'YOUR_GUILD_ID',
-  verifiedRoleId: 'YOUR_VERIFIED_ROLE_ID', 
-  staffRoleId: 'YOUR_STAFF_ROLE_ID', 
-  verificationCategoryId: 'YOUR_VERIFICATION_CATEGORY_ID',
-  verificationChannelId: 'YOUR_VERIFICATION_CHANNEL_ID',
-  logChannelId: 'YOUR_LOG_CHANNEL_ID',
-
-  // Staff member ID who will receive DMs about pending approvals
-  approvalStaffId: 'YOUR_STAFF_ID',
+  // Discord IDs - SANITIZED
+  guildId: 'GUILD_ID',
+  verifiedRoleId: 'VERIFIED_ROLE_ID', 
+  staffRoleId: 'STAFF_ROLE_ID', 
+  verificationCategoryId: 'VERIFICATION_CATEGORY_ID',
+  verificationChannelId: 'VERIFICATION_CHANNEL_ID',
+  logChannelId: 'LOG_CHANNEL_ID',
+  additionalVerificationChannelId: 'ADDITIONAL_VERIFICATION_CHANNEL_ID', // Additional specified channel for verification
+  approvalChannelId: 'APPROVAL_CHANNEL_ID', // Channel for verification approval messages
 
   // Session settings
-  sessionSecret: 'GENERATE_RANDOM_SECRET',
+  sessionSecret: 'SESSION_SECRET',
   dbPath: './monkey-verified-users.json',
 
   // Branding
   embedColor: '#3eff06',
   embedFooter: '© MonkeyBytes Tech | The Code Jungle',
-  welcomeMessage: "🎉 Welcome to the MonkeyBytes jungle! You've been verified and can now access all our coding resources and community features. Grab a banana and start coding! 🍌💻",
-  verificationMessage: "To join the MonkeyBytes community, you'll need to verify your account. Click the button below to get your access banana! 🍌\n\nThis helps us keep our jungle safe from bots.",
+  welcomeMessage: "🎉 Authentication successful! Welcome to the MonkeyBytes jungle! 🌴\n\nYour verification has been approved by our staff team, and you now have full access to all our coding resources, channels, and community features.\n\n🐒 Don't be shy - introduce yourself in our community channels\n💻 Check out our code repositories and learning resources\n🍌 Enjoy your verified status and all the perks that come with it!\n\nIf you need any help, our moderator team is just a message away!",
+  verificationMessage: "To join the MonkeyBytes community, you'll need to verify your account. Click the button below to begin the verification process! 🍌\n\nAfter you authenticate, a staff member will review and approve your request.\n\nThis verification system helps us keep our coding jungle safe and secure.",
 
   // Heartbeat configuration
-  heartbeatWebhook: "YOUR_WEBHOOK_URL",
+  heartbeatWebhook: "DISCORD_WEBHOOK_URL",
   heartbeatInterval: 630000, // 10.5 minutes
 };
 
@@ -67,10 +66,12 @@ let userDB = {
   pendingVerifications: {},
   pendingApprovals: {},
   verifiedUsers: {},
+  deauthorizedUsers: {}, // Track deauthorized users
   statistics: {
     totalVerified: 0,
     verificationsByDay: {},
-    failedAttempts: 0
+    failedAttempts: 0,
+    totalDeauths: 0
   }
 };
 
@@ -150,12 +151,16 @@ function ensureUserDBStructure() {
   if (!userDB.pendingVerifications) userDB.pendingVerifications = {};
   if (!userDB.pendingApprovals) userDB.pendingApprovals = {};
   if (!userDB.verifiedUsers) userDB.verifiedUsers = {};
+  if (!userDB.deauthorizedUsers) userDB.deauthorizedUsers = {};
   if (!userDB.statistics) {
     userDB.statistics = {
       totalVerified: 0,
       verificationsByDay: {},
-      failedAttempts: 0
+      failedAttempts: 0,
+      totalDeauths: 0
     };
+  } else if (!userDB.statistics.totalDeauths) {
+    userDB.statistics.totalDeauths = 0;
   }
   log(`Database structure ensured`, 'STARTUP');
 }
@@ -325,7 +330,7 @@ app.get('/auth/manual', (req, _res, next) => {
   next();
 }, passport.authenticate('discord'));
 
-// Auth callback
+        // Auth callback
 app.get('/auth/callback', 
   passport.authenticate('discord', { failureRedirect: '/' }),
   async (req, res) => {
@@ -341,17 +346,26 @@ app.get('/auth/callback',
         }
       }
       
+      // Check if user was previously deauthorized
+      const wasDeauthorized = req.user && userDB.deauthorizedUsers && userDB.deauthorizedUsers[req.user.id];
+      if (wasDeauthorized) {
+        // Add this information to their request data
+        req.user.wasDeauthorized = true;
+        req.user.previousDeauthReason = userDB.deauthorizedUsers[req.user.id].deauthorizationReason;
+      }
+      
       // Add user to verified database or pending approvals
       if (req.user) {
         // CHANGE: Always require manual approval for all users
         // Check if this authentication requires manual approval
         if (true) { // Always require manual approval
-          // Add to pending approvals
+          // Add to pending approvals with notification flag
+          req.user.notificationSent = true; // Add flag to track if notification sent
           userDB.pendingApprovals[req.user.id] = req.user;
           saveUserDB();
           
           // Notify staff for approval
-          notifyStaffForApproval(req.user.id, req.user.username);
+          sendVerificationRequestToChannel(req.user.id, req.user.username);
           
           // Show waiting for approval page
           return res.send(`
@@ -480,45 +494,112 @@ const server = app.listen(config.port, () => {
 });
 
 // ==================== DISCORD BOT FUNCTIONS ====================
-function setBotPresence() {
+// Array of status messages that rotate
+const statusMessages = [
+  { text: '🍌 Type /verify to authenticate', type: ActivityType.Playing },
+  { text: '👆 Click the verify button in #get-your-banana', type: ActivityType.Watching },
+  { text: '🔑 Verify for full server access', type: ActivityType.Competing },
+  { text: '❓ Need help? Ask a staff member', type: ActivityType.Listening }
+];
+
+// Track current status index
+let currentStatusIndex = 0;
+
+// Function to set and rotate presence
+function setRotatingPresence() {
+  const status = statusMessages[currentStatusIndex];
+  
   client.user.setPresence({
     activities: [{ 
-      name: '🍌 Verifying Monkeys', 
-      type: ActivityType.Watching 
+      name: status.text, 
+      type: status.type 
     }],
     status: 'online'
   });
-  log(`Bot presence set`, 'STARTUP');
+  
+  // Update index for next call
+  currentStatusIndex = (currentStatusIndex + 1) % statusMessages.length;
+  
+  log(`Bot presence updated: ${status.text}`, 'JOB');
 }
 
-async function notifyStaffForApproval(userId, username) {
+// Set up rotating presence system
+function setBotPresence() {
+  // Set initial status
+  setRotatingPresence();
+  
+  // Set interval to change status every 12 seconds
+  setInterval(setRotatingPresence, 12000);
+  
+  log(`Bot presence rotation started`, 'STARTUP');
+}
+
+// Function to send verification request to the approval channel with buttons
+async function sendVerificationRequestToChannel(userId, username) {
   if (!userId || !username) {
     log(`Invalid user information for approval notification`, 'WARN');
     return false;
   }
   
   try {
-    const staffUser = client.users.cache.get(config.approvalStaffId);
-    if (!staffUser) {
-      log(`Staff user for approvals not found: ${config.approvalStaffId}`, 'WARN');
+    const guild = client.guilds.cache.get(config.guildId);
+    if (!guild) {
+      log(`Guild not found: ${config.guildId}`, 'WARN');
       return false;
     }
     
-    try {
-      await staffUser.send(`**Pending Approval for:** <@${userId}> (${username})\n\nPlease respond with "yes" to approve or "no" to deny.`);
-      log(`Sent approval notification to staff for user ${username} (${userId})`, 'JOB');
-      return true;
-    } catch (dmError) {
-      log(`Failed to send DM to staff`, 'WARN', dmError);
+    const approvalChannel = guild.channels.cache.get(config.approvalChannelId);
+    if (!approvalChannel) {
+      log(`Approval channel not found: ${config.approvalChannelId}`, 'WARN');
       return false;
     }
+    
+    // Check if user was previously deauthorized
+    const wasDeauthorized = userDB.deauthorizedUsers && userDB.deauthorizedUsers[userId];
+    
+    // Create accept button
+    const acceptButton = new ButtonBuilder()
+      .setCustomId(`approve_${userId}`)
+      .setLabel('✅ Accept')
+      .setStyle(ButtonStyle.Success);
+    
+    // Create deny button
+    const denyButton = new ButtonBuilder()
+      .setCustomId(`deny_${userId}`)
+      .setLabel('❌ Deny')
+      .setStyle(ButtonStyle.Danger);
+    
+    // Add buttons to action row
+    const actionRow = new ActionRowBuilder()
+      .addComponents(acceptButton, denyButton);
+    
+    // Create embed
+    const embed = new EmbedBuilder()
+      .setTitle('🍌 Pending Verification Request')
+      .setDescription(`<@${userId}> (${username}) is requesting verification.${
+        wasDeauthorized 
+          ? `\n\n⚠️ **Note:** This user was previously deauthorized.\n**Reason:** ${wasDeauthorized.deauthorizationReason || 'No reason provided'}` 
+          : ''
+      }`)
+      .setColor(wasDeauthorized ? '#FF9B21' : config.embedColor) // Orange for previously deauthed users
+      .setFooter({ text: config.embedFooter })
+      .setTimestamp();
+    
+    // Send message with buttons
+    await approvalChannel.send({ 
+      embeds: [embed],
+      components: [actionRow]
+    });
+    
+    log(`Sent verification request to approval channel for user ${username} (${userId})`, 'JOB');
+    return true;
   } catch (error) {
-    log(`Error sending approval notification`, 'ERROR', error);
+    log(`Error sending verification request to channel`, 'ERROR', error);
     return false;
   }
 }
 
-async function processVerificationApproval(userId, approved) {
+async function processVerificationApproval(userId, approved, staffId) {
   try {
     // Check if user is in pending approvals
     if (!userDB.pendingApprovals || !userDB.pendingApprovals[userId]) {
@@ -529,8 +610,16 @@ async function processVerificationApproval(userId, approved) {
     const userData = userDB.pendingApprovals[userId];
     
     if (approved) {
+      // Check if user was previously deauthorized
+      const wasDeauthed = userDB.deauthorizedUsers && userDB.deauthorizedUsers[userId];
+      
       // Move from pending to verified
       userDB.verifiedUsers[userId] = userData;
+      
+      // Remove from deauthorized users if they were there
+      if (wasDeauthed) {
+        delete userDB.deauthorizedUsers[userId];
+      }
       
       // Update statistics
       userDB.statistics.totalVerified++;
@@ -561,7 +650,8 @@ async function processVerificationApproval(userId, approved) {
                   .setDescription(`<@${userId}> has been verified after staff approval!`)
                   .addFields(
                     { name: 'Username', value: `${userData.username}#${userData.discriminator}`, inline: true },
-                    { name: 'User ID', value: userId, inline: true }
+                    { name: 'User ID', value: userId, inline: true },
+                    { name: 'Approved By', value: `<@${staffId}>`, inline: true }
                   )
                   .setColor(config.embedColor)
                   .setFooter({ text: config.embedFooter })
@@ -573,7 +663,7 @@ async function processVerificationApproval(userId, approved) {
               }
             }
             
-            // Send welcome message to the user
+            // Try to send welcome message to the user
             try {
               await member.send({
                 embeds: [
@@ -584,8 +674,21 @@ async function processVerificationApproval(userId, approved) {
                     .setFooter({ text: config.embedFooter })
                 ]
               });
+              log(`Sent welcome DM to ${userData.username}`, 'SUCCESS');
             } catch (dmError) {
               log(`Could not send welcome DM to ${userData.username}`, 'WARN', dmError);
+              
+              // Try to record in log channel that DM failed
+              if (config.logChannelId) {
+                const logChannel = guild.channels.cache.get(config.logChannelId);
+                if (logChannel) {
+                  await logChannel.send({
+                    content: `⚠️ NOTE: Could not send welcome DM to <@${userId}>. They may have DMs disabled.`
+                  }).catch(err => {
+                    log(`Error logging DM failure`, 'WARN', err);
+                  });
+                }
+              }
             }
           }
         } catch (roleError) {
@@ -600,10 +703,11 @@ async function processVerificationApproval(userId, approved) {
         if (logChannel) {
           const embed = new EmbedBuilder()
             .setTitle('❌ User Verification Denied')
-            .setDescription(`<@${userId}>'s verification request was denied by staff.`)
+            .setDescription(`<@${userId}>'s verification request was denied by <@${staffId}>.`)
             .addFields(
               { name: 'Username', value: `${userData.username}#${userData.discriminator}`, inline: true },
-              { name: 'User ID', value: userId, inline: true }
+              { name: 'User ID', value: userId, inline: true },
+              { name: 'Denied By', value: `<@${staffId}>`, inline: true }
             )
             .setColor('#FF0000')
             .setFooter({ text: config.embedFooter })
@@ -643,7 +747,7 @@ async function processVerificationApproval(userId, approved) {
     delete userDB.pendingApprovals[userId];
     saveUserDB();
     
-    log(`User ${userId} approval processed: ${approved ? 'Approved' : 'Denied'}`, approved ? 'COMPLETE' : 'DANGER');
+    log(`User ${userId} approval processed: ${approved ? 'Approved' : 'Denied'} by ${staffId}`, approved ? 'COMPLETE' : 'DANGER');
     return true;
   } catch (error) {
     log(`Error processing approval for ${userId}`, 'ERROR', error);
@@ -651,29 +755,292 @@ async function processVerificationApproval(userId, approved) {
   }
 }
 
-// Additional functions and implementation continue...
-// The rest of the code follows the same pattern as above
+async function checkPendingApprovals() {
+  try {
+    if (!userDB.pendingApprovals) {
+      userDB.pendingApprovals = {};
+      saveUserDB();
+      return 0;
+    }
+    
+    const pendingEntries = Object.entries(userDB.pendingApprovals).filter(([_, userData]) => 
+      userData && userData.username
+    );
+    const pendingCount = pendingEntries.length;
+    
+    if (pendingCount > 0) {
+      log(`Found ${pendingCount} pending approvals, sending notifications`, 'JOB');
+      
+      // Send verification requests to the approval channel
+      const guild = client.guilds.cache.get(config.guildId);
+      if (!guild) {
+        log(`Guild not found: ${config.guildId}`, 'WARN');
+        return pendingCount;
+      }
+      
+      const approvalChannel = guild.channels.cache.get(config.approvalChannelId);
+      if (!approvalChannel) {
+        log(`Approval channel not found: ${config.approvalChannelId}`, 'WARN');
+        return pendingCount;
+      }
+      
+      // Send individual requests only for entries that haven't been notified yet
+      for (const [userId, userData] of pendingEntries) {
+        // Skip if notification was already sent
+        if (userData.notificationSent) {
+          continue;
+        }
+        
+        const success = await sendVerificationRequestToChannel(userId, userData.username);
+        
+        if (success) {
+          // Mark as notified
+          userData.notificationSent = true;
+          saveUserDB();
+        } else {
+          log(`Pausing notifications due to previous failure`, 'WARN');
+          break;
+        }
+        
+        // Add a delay between notifications to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    return pendingCount;
+  } catch (error) {
+    log(`Error checking pending approvals`, 'ERROR', error);
+    return 0;
+  }
+}
 
-// ==================== INITIALIZATION ====================
-// Ensure user database is properly loaded or created before continuing
-ensureDatabaseDirectory();
-ensureUserDBStructure();
-loadUserDB();
-log('Database initialization complete', 'STARTUP');
+async function safeDeleteMessages(channel, messages) {
+  try {
+    // Filter messages to those less than 14 days old
+    const twoWeeksAgo = Date.now() - 12096e5; // 14 days in milliseconds
+    const recentMessages = messages.filter(msg => msg.createdTimestamp > twoWeeksAgo);
+    
+    if (recentMessages.size > 0) {
+      await channel.bulkDelete(recentMessages).catch(err => {
+        log(`Error bulk deleting recent messages`, 'WARN', err);
+      });
+    }
+    
+    // For older messages, delete them individually
+    const oldMessages = messages.filter(msg => msg.createdTimestamp <= twoWeeksAgo);
+    for (const [_, message] of oldMessages) {
+      try {
+        await message.delete().catch(err => {
+          log(`Error deleting old message ${message.id}`, 'WARN', err);
+        });
+        // Small delay to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (err) {
+        log(`Failed to delete message ${message.id}`, 'WARN', err);
+      }
+    }
+    return true;
+  } catch (error) {
+    log(`Error in message deletion process`, 'ERROR', error);
+    return false;
+  }
+}
 
-// Login to Discord
-client.login(config.token).then(() => {
-  log('Bot successfully logged in to Discord', 'COMPLETE');
-}).catch(error => {
-  log('Failed to log in to Discord', 'FATAL', error);
-  
-  // Try to restart after delay if login fails
-  setTimeout(() => {
-    log('Attempting to reconnect...', 'STARTUP');
-    client.login(config.token).catch(reconnectError => {
-      log('Reconnection failed', 'FATAL', reconnectError);
-    });
-  }, 30000); // Wait 30 seconds before retry
-});
+async function setupVerificationSystem(guild) {
+  try {
+    // Create or find verification category
+    let category;
+    if (config.verificationCategoryId) {
+      category = guild.channels.cache.get(config.verificationCategoryId);
+    }
 
-// End of monkeybytes-auth-bot.mjs
+    if (!category) {
+      log(`Creating verification category`, 'JOB');
+      category = await guild.channels.create({
+        name: 'MONKEYBYTES VERIFICATION',
+        type: ChannelType.GuildCategory,
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone.id,
+            allow: [PermissionsBitField.Flags.ViewChannel],
+            deny: [PermissionsBitField.Flags.SendMessages]
+          },
+          {
+            id: client.user.id,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages,
+                    PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ReadMessageHistory]
+          }
+        ]
+      });
+      config.verificationCategoryId = category.id;
+    }
+
+    // Create or find verification channel
+    let verificationChannel;
+    if (config.verificationChannelId) {
+      verificationChannel = guild.channels.cache.get(config.verificationChannelId);
+    }
+
+    if (!verificationChannel) {
+      log(`Creating verification channel`, 'JOB');
+      verificationChannel = await guild.channels.create({
+        name: 'get-your-banana',
+        type: ChannelType.GuildText,
+        parent: category,
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone.id,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory],
+            deny: [PermissionsBitField.Flags.SendMessages]
+          },
+          {
+            id: client.user.id,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages,
+                   PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ReadMessageHistory]
+          }
+        ]
+      });
+      config.verificationChannelId = verificationChannel.id;
+      
+      // Send the verification message
+      await sendVerificationMessage(verificationChannel);
+    }
+
+    // Create or find log channel
+    let logChannel;
+    if (config.logChannelId) {
+      logChannel = guild.channels.cache.get(config.logChannelId);
+    }
+
+    if (!logChannel) {
+      log(`Creating log channel`, 'JOB');
+      logChannel = await guild.channels.create({
+        name: 'monkey-business-logs',
+        type: ChannelType.GuildText,
+        parent: category,
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone.id,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          },
+          {
+            id: config.verifiedRoleId,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          },
+          {
+            id: client.user.id,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages,
+                   PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ReadMessageHistory]
+          }
+        ]
+      });
+      config.logChannelId = logChannel.id;
+      
+      // Add permission for admins to view logs
+      const adminRoles = guild.roles.cache.filter(role => 
+        role.permissions.has(PermissionsBitField.Flags.Administrator)
+      );
+      
+      for (const [_, role] of adminRoles) {
+        await logChannel.permissionOverwrites.create(role, {
+          ViewChannel: true,
+          ReadMessageHistory: true
+        });
+      }
+    }
+
+    // Create or find approval channel
+    let approvalChannel;
+    if (config.approvalChannelId) {
+      approvalChannel = guild.channels.cache.get(config.approvalChannelId);
+    }
+
+    if (!approvalChannel) {
+      log(`Creating approval channel`, 'JOB');
+      approvalChannel = await guild.channels.create({
+        name: 'verification-approvals',
+        type: ChannelType.GuildText,
+        parent: category,
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone.id,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          },
+          {
+            id: config.verifiedRoleId,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          },
+          {
+            id: client.user.id,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages,
+                  PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ReadMessageHistory]
+          }
+        ]
+      });
+      config.approvalChannelId = approvalChannel.id;
+      
+      // Add permission for staff to view and interact with approval channel
+      if (config.staffRoleId) {
+        const staffRole = guild.roles.cache.get(config.staffRoleId);
+        if (staffRole) {
+          await approvalChannel.permissionOverwrites.create(staffRole, {
+            ViewChannel: true,
+            ReadMessageHistory: true
+          });
+        }
+      }
+      
+      // Add permission for admins as well
+      const adminRoles = guild.roles.cache.filter(role => 
+        role.permissions.has(PermissionsBitField.Flags.Administrator)
+      );
+      
+      for (const [_, role] of adminRoles) {
+        await approvalChannel.permissionOverwrites.create(role, {
+          ViewChannel: true,
+          ReadMessageHistory: true
+        });
+      }
+    }
+
+    return { category, verificationChannel, logChannel, approvalChannel };
+  } catch (error) {
+    log(`Error setting up verification system`, 'ERROR', error);
+    return null;
+  }
+}
+
+function isStaffMember(member) {
+  return member.roles.cache.has(config.staffRoleId) || 
+         member.permissions.has(PermissionsBitField.Flags.Administrator);
+}
+
+async function sendVerificationMessage(channel) {
+  const verifyButton = new ButtonBuilder()
+    .setCustomId('verify_button')
+    .setLabel('🍌 Get Verified')
+    .setStyle(ButtonStyle.Primary);
+
+  const row = new ActionRowBuilder().addComponents(verifyButton);
+
+  const embed = new EmbedBuilder()
+    .setTitle('🐵 MonkeyBytes Verification')
+    .setDescription(config.verificationMessage)
+    .setColor(config.embedColor)
+    .setFooter({ text: config.embedFooter })
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed], components: [row] });
+  log(`Sent verification message to channel ${channel.id}`, 'JOB');
+}
+
+// New function to check if there's already a verification message in the specified channel
+async function checkAndSendVerificationToChannel(channelId) {
+  try {
+    // Get the specified channel
+    const guild = client.guilds.cache.get(config.guildId);
+    if (!guild) {
+      log(`Guild with ID ${config.guildId} not found`, 'ERROR');
+      return false;
+    }
+    
+    const channel = guild.channels.
