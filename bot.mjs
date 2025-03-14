@@ -15,18 +15,18 @@ import os from 'os';
 
 // ==================== CONFIGURATION ====================
 const config = {
-  // User provided credentials - SANITIZED
-  clientId: 'DISCORD_CLIENT_ID',
-  clientSecret: 'DISCORD_CLIENT_SECRET',
-  token: 'DISCORD_BOT_TOKEN',
+  // User provided credentials - REPLACE WITH YOUR ACTUAL CREDENTIALS
+  clientId: 'YOUR_CLIENT_ID',
+  clientSecret: 'YOUR_CLIENT_SECRET',
+  token: 'YOUR_BOT_TOKEN',
 
   // Server configuration
   port: 20295,
-  redirectUri: 'http://example.com:20295/auth/callback',
-  serverUrl: 'http://example.com:20295',
+  redirectUri: 'http://your-server-domain:20295/auth/callback',
+  serverUrl: 'http://your-server-domain:20295',
 
-  // Discord IDs - SANITIZED
-  guildId: 'GUILD_ID',
+  // Discord IDs
+  guildId: 'YOUR_GUILD_ID',
   verifiedRoleId: 'VERIFIED_ROLE_ID', 
   staffRoleId: 'STAFF_ROLE_ID', 
   verificationCategoryId: 'VERIFICATION_CATEGORY_ID',
@@ -36,7 +36,7 @@ const config = {
   approvalChannelId: 'APPROVAL_CHANNEL_ID', // Channel for verification approval messages
 
   // Session settings
-  sessionSecret: 'SESSION_SECRET',
+  sessionSecret: 'your-session-secret',
   dbPath: './monkey-verified-users.json',
 
   // Branding
@@ -46,7 +46,7 @@ const config = {
   verificationMessage: "To join the MonkeyBytes community, you'll need to verify your account. Click the button below to begin the verification process! 🍌\n\nAfter you authenticate, a staff member will review and approve your request.\n\nThis verification system helps us keep our coding jungle safe and secure.",
 
   // Heartbeat configuration
-  heartbeatWebhook: "DISCORD_WEBHOOK_URL",
+  heartbeatWebhook: "YOUR_HEARTBEAT_WEBHOOK_URL",
   heartbeatInterval: 630000, // 10.5 minutes
 };
 
@@ -330,7 +330,7 @@ app.get('/auth/manual', (req, _res, next) => {
   next();
 }, passport.authenticate('discord'));
 
-        // Auth callback
+// Auth callback
 app.get('/auth/callback', 
   passport.authenticate('discord', { failureRedirect: '/' }),
   async (req, res) => {
@@ -1043,4 +1043,956 @@ async function checkAndSendVerificationToChannel(channelId) {
       return false;
     }
     
-    const channel = guild.channels.
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel) {
+      log(`Channel with ID ${channelId} not found`, 'ERROR');
+      return false;
+    }
+    
+    // Check if there's already a verification message with a button
+    const messages = await channel.messages.fetch({ limit: 10 });
+    const verificationMessages = messages.filter(msg => 
+      msg.author.id === client.user.id && 
+      msg.components.length > 0 &&
+      msg.components[0].components.some(c => c.customId === 'verify_button')
+    );
+    
+    // If there's already a verification message, don't send a new one
+    if (verificationMessages.size > 0) {
+      log(`Verification message already exists in channel ${channelId}`, 'INFO');
+      return false;
+    }
+    
+    // No verification message found, send a new one
+    await sendVerificationMessage(channel);
+    log(`Sent verification message to channel ${channelId}`, 'SUCCESS');
+    return true;
+  } catch (error) {
+    log(`Error checking/sending verification message to channel ${channelId}`, 'ERROR', error);
+    return false;
+  }
+}
+
+async function registerCommands(guild) {
+  try {
+    const commandsData = [
+      // Public slash command - Verify
+      {
+        name: 'verify',
+        description: 'Get verified on the MonkeyBytes server',
+        type: ApplicationCommandType.ChatInput
+      },
+      
+      // Right-click user context menu command
+      {
+        name: 'Verify with MonkeyBytes',
+        type: ApplicationCommandType.User
+      },
+      
+      // Staff commands - Verify and deauth
+      {
+        name: 'manualverify',
+        description: '[Staff] Manually verify a user',
+        type: ApplicationCommandType.ChatInput,
+        options: [
+          {
+            name: 'user',
+            description: 'The user to verify',
+            type: 6, // USER type
+            required: true
+          }
+        ]
+      },
+      {
+        name: 'deauth',
+        description: '[Staff] Remove verification from a user',
+        type: ApplicationCommandType.ChatInput,
+        options: [
+          {
+            name: 'user',
+            description: 'The user to deauthorize',
+            type: 6, // USER type
+            required: true
+          },
+          {
+            name: 'reason',
+            description: 'Reason for deauthorization',
+            type: 3, // STRING type
+            required: false
+          }
+        ]
+      },
+      
+      // Stats command
+      {
+        name: 'stats',
+        description: '[Staff] View verification statistics',
+        type: ApplicationCommandType.ChatInput
+      },
+      
+      // Setup command
+      {
+        name: 'setup',
+        description: '[Staff] Setup the verification system',
+        type: ApplicationCommandType.ChatInput
+      },
+      
+      // Pending approvals command
+      {
+        name: 'pendingapprovals',
+        description: '[Staff] View pending approvals',
+        type: ApplicationCommandType.ChatInput
+      },
+      
+      // Update verification message command
+      {
+        name: 'updateverifymsg',
+        description: '[Staff] Update the verification message',
+        type: ApplicationCommandType.ChatInput
+      },
+      
+      // NEW: Update verification message in additional channel command
+      {
+        name: 'updateadditionalverifymsg',
+        description: '[Staff] Update the verification message in the additional channel',
+        type: ApplicationCommandType.ChatInput
+      }
+    ];
+    
+    await guild.commands.set(commandsData);
+    log(`Registered ${commandsData.length} commands in guild ${guild.name}`, 'COMPLETE');
+    return true;
+  } catch (error) {
+    log(`Error registering commands`, 'ERROR', error);
+    return false;
+  }
+}
+
+function sendVerificationUrl(interaction) {
+  const authUrl = `${config.serverUrl}/auth`;
+  const embed = new EmbedBuilder()
+    .setTitle('🐵 MonkeyBytes Verification')
+    .setDescription(`Click [here to verify](${authUrl}) your account.\n\nThis will open the authentication page. After authorizing with Discord, you'll receive the verified role.`)
+    .setColor(config.embedColor)
+    .setFooter({ text: config.embedFooter })
+    .setTimestamp();
+
+  return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+}
+
+// ==================== HEARTBEAT FUNCTION ====================
+async function sendHeartbeat() {
+  try {
+    // Get accurate counts
+    const currentVerifiedCount = Object.keys(userDB.verifiedUsers || {}).length;
+    const currentDeauthCount = Object.keys(userDB.deauthorizedUsers || {}).length;
+    const pendingCount = Object.keys(userDB.pendingApprovals || {}).length;
+    
+    // Simple heartbeat with only essential information
+    const heartbeatEmbed = {
+      title: "🍌 MonkeyBytes Auth Status",
+      color: 0x3eff06,
+      timestamp: new Date().toISOString(),
+      fields: [
+        {
+          name: "Bot Status",
+          value: `Online | ${client.user.tag}`,
+          inline: true
+        },
+        {
+          name: "Memory",
+          value: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+          inline: true
+        },
+        {
+          name: "Verified Users",
+          value: currentVerifiedCount.toString(),
+          inline: true
+        },
+        {
+          name: "Deauthorized Users",
+          value: currentDeauthCount.toString(),
+          inline: true
+        },
+        {
+          name: "Pending Approvals",
+          value: pendingCount.toString(),
+          inline: true
+        },
+        {
+          name: "Total Stats",
+          value: `✅ ${userDB.statistics.totalVerified} verified | ❌ ${userDB.statistics.totalDeauths} deauthed`,
+          inline: false
+        }
+      ],
+      footer: {
+        text: config.embedFooter
+      }
+    };
+    
+    // Send to webhook
+    await axios({
+      method: 'post',
+      url: config.heartbeatWebhook,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: {
+        username: "MonkeyBytes Auth",
+        embeds: [heartbeatEmbed]
+      },
+      timeout: 5000
+    });
+    
+    log(`Heartbeat sent`, 'JOB');
+  } catch (error) {
+    log(`Failed to send heartbeat`, 'WARN', error);
+  }
+}
+
+// ==================== BOT EVENTS ====================
+client.once('ready', async () => {
+  log(`Bot logged in as ${client.user.tag}`, 'STARTUP');
+  
+  // Set bot presence
+  setBotPresence();
+
+  // Setup verification system
+  const guild = client.guilds.cache.get(config.guildId);
+  if (guild) {
+    await setupVerificationSystem(guild);
+    await registerCommands(guild);
+    log(`Verification system ready in guild: ${guild.name}`, 'COMPLETE');
+    
+    // Send verification message to the additional specified channel
+    if (config.additionalVerificationChannelId) {
+      await checkAndSendVerificationToChannel(config.additionalVerificationChannelId);
+    }
+    
+    // Send initial heartbeat on startup
+    sendHeartbeat();
+    
+    // Start heartbeat interval
+    setInterval(sendHeartbeat, config.heartbeatInterval);
+    
+    // Set a 30-second interval to check for pending approvals
+    setInterval(async () => {
+      try {
+        // Skip if there are no pending approvals
+        if (!userDB.pendingApprovals || Object.keys(userDB.pendingApprovals || {}).length === 0) {
+          return;
+        }
+        
+        const pendingCount = await checkPendingApprovals();
+        if (pendingCount > 0) {
+          log(`Found ${pendingCount} pending approvals`, 'JOB');
+        }
+      } catch (error) {
+        log(`Error in automatic pending approval check`, 'ERROR', error);
+      }
+    }, 30000); // 30 seconds
+  } else {
+    log(`Guild with ID ${config.guildId} not found`, 'ERROR');
+  }
+});
+
+// Handle button interactions
+client.on('interactionCreate', async interaction => {
+  try {
+    // Verify button
+    if (interaction.isButton()) {
+      if (interaction.customId === 'verify_button') {
+        // Check if user is already verified
+        if (userDB.verifiedUsers && userDB.verifiedUsers[interaction.user.id]) {
+          return interaction.reply({
+            content: '✅ You are already verified!',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        return sendVerificationUrl(interaction);
+      }
+      
+      // Handle approval buttons
+      if (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('deny_')) {
+        // Permission check
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({ 
+            content: 'You need staff permissions to use these buttons.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        const approved = interaction.customId.startsWith('approve_');
+        const userId = interaction.customId.split('_')[1];
+        
+        // Process the verification
+        await interaction.deferReply({ ephemeral: true });
+        
+        const success = await processVerificationApproval(userId, approved, interaction.user.id);
+        
+        if (success) {
+          // Add a reaction to the message to show it's been processed
+          try {
+            await interaction.message.react(approved ? '✅' : '❌');
+          } catch (reactError) {
+            log(`Error adding reaction to message`, 'WARN', reactError);
+          }
+          
+          // Reply to the interaction
+          await interaction.editReply({
+            content: `✅ Successfully ${approved ? 'approved' : 'denied'} verification for <@${userId}>.`,
+          });
+          
+          // Edit the original message to show it's been processed and remove buttons
+          const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+            .setTitle(approved ? '✅ Verification Approved' : '❌ Verification Denied')
+            .setDescription(`<@${userId}> verification has been ${approved ? 'approved' : 'denied'} by <@${interaction.user.id}>.`)
+            .setColor(approved ? config.embedColor : '#FF0000')
+            .setTimestamp();
+          
+          // Update message without any components (buttons)
+          await interaction.message.edit({ 
+            embeds: [updatedEmbed],
+            components: [] // Remove all buttons
+          });
+        } else {
+          await interaction.editReply({
+            content: `❌ Error processing ${approved ? 'approval' : 'denial'}. The user might no longer be pending.`,
+          });
+        }
+        
+        return;
+      }
+    }
+    
+    // Handle slash commands
+    if (interaction.isChatInputCommand()) {
+      const { commandName } = interaction;
+      
+      // Public verify command
+      if (commandName === 'verify') {
+        // Check if user is already verified
+        if (userDB.verifiedUsers && userDB.verifiedUsers[interaction.user.id]) {
+          return interaction.reply({
+            content: '✅ You are already verified!',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        return sendVerificationUrl(interaction);
+      }
+      
+      // Manual verify command
+      else if (commandName === 'manualverify') {
+        // Permission check
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({ 
+            content: 'You need staff permissions to use this command.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        const user = interaction.options.getUser('user');
+        
+        try {
+          const member = await interaction.guild.members.fetch(user.id).catch(err => {
+            log(`Error fetching member for manual verification: ${user.id}`, 'ERROR', err);
+            return null;
+          });
+          
+          if (!member) {
+            return interaction.reply({ 
+              content: `❌ User <@${user.id}> is not a member of this server.`,
+              flags: MessageFlags.Ephemeral
+            });
+          }
+          
+          // Already verified check
+          if (userDB.verifiedUsers[user.id]) {
+            return interaction.reply({ 
+              content: `❌ User <@${user.id}> is already verified.`,
+              flags: MessageFlags.Ephemeral
+            });
+          }
+          
+          // Create user data for manual verification
+          const timestamp = new Date().toISOString();
+          const userData = {
+            id: user.id,
+            username: user.username,
+            discriminator: user.discriminator || '0',
+            globalName: user.globalName || user.username,
+            avatar: user.avatar,
+            email: null,
+            accessToken: null,
+            refreshToken: null,
+            verifiedAt: timestamp,
+            verificationIP: 'manual-verification',
+            bananaCount: 1,
+            tier: "banana",
+            manuallyVerifiedBy: interaction.user.id
+          };
+          
+          // Add user to verified database
+          userDB.verifiedUsers[user.id] = userData;
+          
+          // Update statistics
+          userDB.statistics.totalVerified++;
+          const today = new Date().toISOString().split('T')[0];
+          userDB.statistics.verificationsByDay[today] = 
+            (userDB.statistics.verificationsByDay[today] || 0) + 1;
+          
+          saveUserDB();
+          
+          // Add the verified role
+          await member.roles.add(config.verifiedRoleId).catch(err => {
+            log(`Error adding verified role to ${user.id}`, 'ERROR', err);
+            throw new Error(`Could not add verified role: ${err.message}`);
+          });
+          
+          // Log the verification
+          const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
+          if (logChannel) {
+            const embed = new EmbedBuilder()
+              .setTitle('🍌 User Manually Verified')
+              .setDescription(`<@${user.id}> has been manually verified by <@${interaction.user.id}>!`)
+              .addFields([
+                { name: 'Username', value: `${user.username}#${user.discriminator}`, inline: true },
+                { name: 'User ID', value: user.id, inline: true },
+                { name: 'Verified By', value: `<@${interaction.user.id}>`, inline: true }
+              ])
+              .setColor(config.embedColor)
+              .setFooter({ text: config.embedFooter })
+              .setTimestamp();
+            
+            await logChannel.send({ embeds: [embed] }).catch(err => {
+              log(`Error sending log message for manual verification`, 'WARN', err);
+            });
+          }
+          
+          // Send welcome message to the user
+          try {
+            await member.send({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle('🎉 Welcome to MonkeyBytes!')
+                  .setDescription(config.welcomeMessage)
+                  .setColor(config.embedColor)
+                  .setFooter({ text: config.embedFooter })
+              ]
+            });
+            log(`Sent welcome DM to ${user.username}`, 'SUCCESS');
+          } catch (dmError) {
+            log(`Could not send welcome DM to ${user.username}`, 'WARN', dmError);
+            
+            // Log to the log channel that DM failed
+            if (config.logChannelId) {
+              const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
+              if (logChannel) {
+                await logChannel.send({
+                  content: `⚠️ NOTE: Could not send welcome DM to <@${user.id}>. They may have DMs disabled.`,
+                  allowedMentions: { users: [] } // Prevent pinging the user
+                }).catch(err => {
+                  log(`Error logging DM failure`, 'WARN', err);
+                });
+              }
+            }
+          }
+          
+          await interaction.reply({ 
+            content: `✅ Successfully verified <@${user.id}> and assigned the verified role.`,
+            flags: MessageFlags.Ephemeral
+          });
+        } catch (error) {
+          log(`Error during manual verification for ${user.id}`, 'ERROR', error);
+          await interaction.reply({
+            content: `❌ Error verifying user: ${error.message}`,
+            flags: MessageFlags.Ephemeral
+          });
+        }
+      }
+      
+      // Deauth command
+      else if (commandName === 'deauth') {
+        // Permission check
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({ 
+            content: 'You need staff permissions to use this command.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        const user = interaction.options.getUser('user');
+        const reason = interaction.options.getString('reason') || 'No reason provided';
+        
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        
+        // Check if user is verified
+        if (!userDB || !userDB.verifiedUsers || !userDB.verifiedUsers[user.id]) {
+          return interaction.editReply({ 
+            content: `❌ User <@${user.id}> is not verified.`
+          });
+        }
+        
+        try {
+          // Get the member object
+          const member = await interaction.guild.members.fetch(user.id).catch(err => {
+            log(`Error fetching member for deauth: ${user.id}`, 'ERROR', err);
+            return null;
+          });
+          
+          // Remove user from verified database
+          delete userDB.verifiedUsers[user.id];
+          
+          // Add to deauthorized users list
+          userDB.deauthorizedUsers[user.id] = {
+            ...userDB.verifiedUsers[user.id],
+            deauthorizedAt: new Date().toISOString(),
+            deauthorizedBy: interaction.user.id,
+            deauthorizationReason: reason
+          };
+          
+          // Update statistics
+          userDB.statistics.totalDeauths++;
+          
+          saveUserDB();
+          
+          // If the member is still in the server, remove their role and send notification
+          if (member) {
+            // Remove the verified role if they have it
+            if (member.roles.cache.has(config.verifiedRoleId)) {
+              await member.roles.remove(config.verifiedRoleId).catch(err => {
+                log(`Error removing verified role from ${user.id}`, 'ERROR', err);
+                // Continue even if role removal fails - we've already removed from DB
+              });
+            }
+            
+            // Try to send DM to user with verification link
+            let dmSuccess = false;
+            try {
+              const authUrl = `${config.serverUrl}/auth`;
+              const embed = new EmbedBuilder()
+                .setTitle('🐵 MonkeyBytes Verification Status Update')
+                .setDescription(`Your verification access to the MonkeyBytes server has been revoked by a staff member.\n\n**Reason:** ${reason}\n\nTo regain access to our coding jungle, please [click here to verify again](${authUrl}). After you authenticate, a staff member will review your request.\n\nIf you have any questions about this decision, please contact a server administrator.`)
+                .setColor('#FF9B21') // Orange for warnings
+                .setFooter({ text: config.embedFooter })
+                .setTimestamp();
+              
+              await user.send({ embeds: [embed] });
+              dmSuccess = true;
+              log(`Sent deauth DM to ${user.username}`, 'INFO');
+            } catch (dmError) {
+              log(`Could not send deauth DM to ${user.username}`, 'WARN', dmError);
+              dmSuccess = false;
+            }
+            
+            // If DM failed, log to the log channel
+            if (!dmSuccess && config.logChannelId) {
+              const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
+              if (logChannel) {
+                await logChannel.send({
+                  content: `⚠️ NOTE: Could not send deauthorization notification DM to <@${user.id}>. They may have DMs disabled.`,
+                  allowedMentions: { users: [] } // Prevent pinging the user
+                }).catch(err => {
+                  log(`Error logging DM failure`, 'WARN', err);
+                });
+              }
+            }
+          }
+          
+          // Log the deauthorization
+          const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
+          if (logChannel) {
+            const embed = new EmbedBuilder()
+              .setTitle('🍌 User Deauthorized')
+              .setDescription(`<@${user.id}> has been deauthorized by <@${interaction.user.id}>!`)
+              .addFields(
+                { name: 'Username', value: `${user.username}#${user.discriminator || '0'}`, inline: true },
+                { name: 'User ID', value: user.id, inline: true },
+                { name: 'Deauthorized By', value: `<@${interaction.user.id}>`, inline: true },
+                { name: 'Reason', value: reason, inline: false }
+              )
+              .setColor('#FF0000')
+              .setFooter({ text: config.embedFooter })
+              .setTimestamp();
+            
+            await logChannel.send({ embeds: [embed] }).catch(err => {
+              log(`Error sending log message for deauth command`, 'WARN', err);
+            });
+          }
+          
+          await interaction.editReply({ 
+            content: `✅ Successfully deauthorized <@${user.id}>. ${member ? "They have been sent a reauthorization link." : "User is no longer in the server but their verification data has been removed."}`
+          });
+        } catch (error) {
+          log(`Error during deauthorization for ${user.id}`, 'ERROR', error);
+          await interaction.editReply({ 
+            content: `❌ Error deauthorizing user: ${error.message}`
+          });
+        }
+      }
+      
+      // Stats command
+      else if (commandName === 'stats') {
+        // Permission check
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({ 
+            content: 'You need staff permissions to use this command.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        const stats = userDB.statistics;
+        // Ensure pendingApprovals exists
+        if (!userDB.pendingApprovals) {
+          userDB.pendingApprovals = {};
+          saveUserDB();
+        }
+        const pendingCount = Object.keys(userDB.pendingApprovals).length;
+        const deauthCount = Object.keys(userDB.deauthorizedUsers || {}).length;
+        
+        const embed = new EmbedBuilder()
+          .setTitle('🍌 MonkeyBytes Verification Stats')
+          .addFields(
+            { name: 'Currently Verified', value: Object.keys(userDB.verifiedUsers).length.toString(), inline: true },
+            { name: 'Total Verifications', value: stats.totalVerified.toString(), inline: true },
+            { name: 'Deauthorized Users', value: deauthCount.toString(), inline: true },
+            { name: 'Pending Approvals', value: pendingCount.toString(), inline: true },
+            { name: 'Failed Attempts', value: stats.failedAttempts.toString(), inline: true }
+          )
+          .setColor(config.embedColor)
+          .setFooter({ text: config.embedFooter })
+          .setTimestamp();
+        
+        // Add today's verifications
+        const today = new Date().toISOString().split('T')[0];
+        const todayVerifications = stats.verificationsByDay[today] || 0;
+        embed.addFields(
+          { name: 'Verifications Today', value: todayVerifications.toString() }
+        );
+        
+        // Create a button to trigger manual check for pending approvals
+        const checkButton = new ButtonBuilder()
+          .setCustomId('check_pending_approvals')
+          .setLabel('Check Pending Approvals')
+          .setStyle(ButtonStyle.Primary);
+        
+        const row = new ActionRowBuilder().addComponents(checkButton);
+        
+        await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+      }
+      
+      // Setup command
+      else if (commandName === 'setup') {
+        // Permission check
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({ 
+            content: 'You need staff permissions to use this command.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        
+        const guild = interaction.guild;
+        const channels = await setupVerificationSystem(guild);
+        
+        if (channels) {
+          await interaction.editReply({ 
+            content: `✅ Setup complete! Verification channel: <#${channels.verificationChannel.id}>, Log channel: <#${channels.logChannel.id}>, Approval channel: <#${channels.approvalChannel.id}>`
+          });
+        } else {
+          await interaction.editReply({ 
+            content: `❌ Error setting up verification system. Check console logs.`
+          });
+        }
+      }
+      
+      // Pending approvals command
+      else if (commandName === 'pendingapprovals') {
+        // Permission check
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({ 
+            content: 'You need staff permissions to use this command.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        
+        // Ensure pendingApprovals exists
+        if (!userDB.pendingApprovals) {
+          userDB.pendingApprovals = {};
+          saveUserDB();
+        }
+        
+        const pendingCount = Object.keys(userDB.pendingApprovals).length;
+        
+        if (pendingCount === 0) {
+          return interaction.editReply({
+            content: '✅ There are no pending verification approvals at this time.'
+          });
+        }
+        
+        // Create embed for pending approvals
+        const embed = new EmbedBuilder()
+          .setTitle('🍌 Pending Verification Approvals')
+          .setDescription(`There are **${pendingCount}** pending verification requests.`)
+          .setColor(config.embedColor)
+          .setFooter({ text: config.embedFooter })
+          .setTimestamp();
+        
+        // Add fields for each pending approval (up to 10)
+        let count = 0;
+        for (const [userId, userData] of Object.entries(userDB.pendingApprovals)) {
+          if (count >= 10) break;
+          if (!userData) continue; // Skip invalid entries
+          
+          const created = new Date(userData.verifiedAt || Date.now()).toLocaleString();
+          embed.addFields([
+            { 
+              name: `${userData.username || 'Unknown'}#${userData.discriminator || '0'}`,
+              value: `ID: ${userId}\nRequested: ${created}`,
+              inline: true
+            }
+          ]);
+          
+          count++;
+        }
+        
+        // Create a button to send DM notifications
+        const notifyButton = new ButtonBuilder()
+          .setCustomId('check_pending_approvals')
+          .setLabel('Send Channel Notifications')
+          .setStyle(ButtonStyle.Primary);
+        
+        const row = new ActionRowBuilder().addComponents(notifyButton);
+        
+        await interaction.editReply({
+          embeds: [embed],
+          components: [row]
+        });
+      }
+      
+      // Update verification message command
+      else if (commandName === 'updateverifymsg') {
+        // Permission check
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({ 
+            content: 'You need staff permissions to use this command.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        
+        const verificationChannel = interaction.guild.channels.cache.get(config.verificationChannelId);
+        if (!verificationChannel) {
+          return interaction.editReply({
+            content: '❌ Verification channel not found. Please run /setup first.'
+          });
+        }
+        
+        // Fetch messages for deletion with error handling
+        const messages = await verificationChannel.messages.fetch({ limit: 10 }).catch(err => {
+          log(`Error fetching messages from verification channel`, 'ERROR', err);
+          return null;
+        });
+        
+        if (!messages) {
+          return interaction.editReply({
+            content: '❌ Error fetching messages from verification channel.'
+          });
+        }
+        
+        const botMessages = messages.filter(msg => msg.author.id === client.user.id);
+        
+        // Use our safer delete function
+        const deleteSuccess = await safeDeleteMessages(verificationChannel, botMessages);
+        
+        if (deleteSuccess) {
+          // Send new verification message
+          try {
+            await sendVerificationMessage(verificationChannel);
+            
+            await interaction.editReply({
+              content: '✅ Verification message updated successfully!'
+            });
+          } catch (error) {
+            log(`Error sending new verification message`, 'ERROR', error);
+            await interaction.editReply({
+              content: `❌ Error sending new verification message: ${error.message}`
+            });
+          }
+        } else {
+          await interaction.editReply({
+            content: '❌ Error deleting old messages. Try again later.'
+          });
+        }
+      }
+      
+      // NEW: Update verification message in additional channel command
+      else if (commandName === 'updateadditionalverifymsg') {
+        // Permission check
+        if (!isStaffMember(interaction.member)) {
+          return interaction.reply({ 
+            content: 'You need staff permissions to use this command.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        
+        const additionalChannel = interaction.guild.channels.cache.get(config.additionalVerificationChannelId);
+        if (!additionalChannel) {
+          return interaction.editReply({
+            content: '❌ Additional verification channel not found.'
+          });
+        }
+        
+        // Fetch messages for deletion with error handling
+        const messages = await additionalChannel.messages.fetch({ limit: 10 }).catch(err => {
+          log(`Error fetching messages from additional verification channel`, 'ERROR', err);
+          return null;
+        });
+        
+        if (!messages) {
+          return interaction.editReply({
+            content: '❌ Error fetching messages from additional verification channel.'
+          });
+        }
+        
+        const botMessages = messages.filter(msg => msg.author.id === client.user.id);
+        
+        // Use our safer delete function
+        const deleteSuccess = await safeDeleteMessages(additionalChannel, botMessages);
+        
+        if (deleteSuccess) {
+          // Send new verification message
+          try {
+            await sendVerificationMessage(additionalChannel);
+            
+            await interaction.editReply({
+              content: '✅ Verification message in additional channel updated successfully!'
+            });
+          } catch (error) {
+            log(`Error sending new verification message to additional channel`, 'ERROR', error);
+            await interaction.editReply({
+              content: `❌ Error sending new verification message: ${error.message}`
+            });
+          }
+        } else {
+          await interaction.editReply({
+            content: '❌ Error deleting old messages. Try again later.'
+          });
+        }
+      }
+    }
+    
+    // Handle context menu commands
+    if (interaction.isUserContextMenuCommand()) {
+      const { commandName } = interaction;
+      
+      // Verify with MonkeyBytes context menu
+      if (commandName === 'Verify with MonkeyBytes') {
+        return sendVerificationUrl(interaction);
+      }
+    }
+  } catch (error) {
+    log(`Error in interaction handler`, 'ERROR', error);
+    // Try to send an error message if possible
+    if (interaction.replied || interaction.deferred) {
+      await interaction.editReply({
+        content: `❌ An error occurred while processing your command. Please try again later.`,
+        flags: MessageFlags.Ephemeral
+      }).catch(() => {});
+    } else {
+      await interaction.reply({
+        content: `❌ An error occurred while processing your command. Please try again later.`,
+        flags: MessageFlags.Ephemeral
+      }).catch(() => {});
+    }
+  }
+});
+
+// ==================== BUTTON HANDLER ====================
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+  
+  if (interaction.customId === 'check_pending_approvals') {
+    await interaction.deferReply({ ephemeral: true });
+    
+    // Ensure pendingApprovals exists
+    if (!userDB.pendingApprovals) {
+      userDB.pendingApprovals = {};
+      saveUserDB();
+    }
+    
+    const pendingCount = Object.keys(userDB.pendingApprovals).length;
+    
+    if (pendingCount > 0) {
+      // Trigger the check for pending approvals
+      await checkPendingApprovals();
+      
+      // List the pending users
+      let pendingList = '';
+      try {
+        pendingList = Object.entries(userDB.pendingApprovals)
+          .filter(([_, userData]) => userData && userData.username) // Filter out invalid entries
+          .map(([userId, userData]) => `• <@${userId}> (${userData.username || 'Unknown'})`)
+          .join('\n');
+        
+        if (!pendingList || pendingList.trim() === '') {
+          pendingList = '*No valid pending approvals found*';
+        }
+      } catch (error) {
+        log(`Error generating pending list`, 'ERROR', error);
+        pendingList = '*Error generating list*';
+      }
+      
+      await interaction.editReply({
+        content: `✅ Sent notifications for ${pendingCount} pending approval(s).\n\nPending users:\n${pendingList}`
+      });
+    } else {
+      await interaction.editReply({
+        content: '✅ There are no pending approvals at this time.'
+      });
+    }
+  }
+});
+
+// ==================== ERROR HANDLING ====================
+process.on('uncaughtException', (error) => {
+  log(`Uncaught Exception: ${error.message}`, 'FATAL', error);
+  // Don't exit, just log
+});
+
+process.on('unhandledRejection', (reason) => {
+  log(`Unhandled Rejection`, 'ERROR', reason);
+  // Don't exit, just log
+});
+
+// ==================== INITIALIZATION ====================
+// Ensure user database is properly loaded or created before continuing
+ensureDatabaseDirectory();
+ensureUserDBStructure();
+loadUserDB();
+log('Database initialization complete', 'STARTUP');
+
+// Login to Discord
+client.login(config.token).then(() => {
+  log('Bot successfully logged in to Discord', 'COMPLETE');
+}).catch(error => {
+  log('Failed to log in to Discord', 'FATAL', error);
+  
+  // Try to restart after delay if login fails
+  setTimeout(() => {
+    log('Attempting to reconnect...', 'STARTUP');
+    client.login(config.token).catch(reconnectError => {
+      log('Reconnection attempt failed', 'FATAL', reconnectError);
+    });
+  }, 30000); // Wait 30 seconds before retry
+});
+
+// End of monkeybytes-auth-bot.mjs.
