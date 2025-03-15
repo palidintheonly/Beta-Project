@@ -2,55 +2,44 @@
 // Simple Discord Authentication Bot for MonkeyBytes
 
 import { Client, GatewayIntentBits, EmbedBuilder, ButtonBuilder, ActionRowBuilder, 
-  ButtonStyle, PermissionsBitField, ChannelType, ActivityType, ApplicationCommandType,
-  ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
+  ButtonStyle, PermissionsBitField, ActivityType, ApplicationCommandType,
+  ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import express from 'express';
 import session from 'express-session';
 import passport from 'passport';
 import { Strategy } from 'passport-discord';
 import fs from 'fs';
 import path from 'path';
-import axios from 'axios';
-import os from 'os';
+import { exec } from 'child_process';
 
 // ==================== CONFIGURATION ====================
 const config = {
-  // User provided credentials - REPLACE WITH YOUR ACTUAL CREDENTIALS
-  clientId: 'YOUR_CLIENT_ID',
-  clientSecret: 'YOUR_CLIENT_SECRET',
-  token: 'YOUR_BOT_TOKEN',
-
-  // Server configuration
+  clientId: 'YOUR_CLIENT_ID_HERE',
+  clientSecret: 'YOUR_CLIENT_SECRET_HERE',
+  token: 'YOUR_BOT_TOKEN_HERE',
   port: 20295,
-  redirectUri: 'http://your-server-domain:20295/auth/callback',
-  serverUrl: 'http://your-server-domain:20295',
-
-  // Discord IDs
-  guildId: 'YOUR_GUILD_ID',
-  verifiedRoleId: 'VERIFIED_ROLE_ID', 
-  staffRoleId: 'STAFF_ROLE_ID', 
-  verificationCategoryId: 'VERIFICATION_CATEGORY_ID',
-  verificationChannelId: 'VERIFICATION_CHANNEL_ID',
-  logChannelId: 'LOG_CHANNEL_ID',
-  additionalVerificationChannelId: 'ADDITIONAL_VERIFICATION_CHANNEL_ID', // Additional specified channel for verification
-  approvalChannelId: 'APPROVAL_CHANNEL_ID', // Channel for verification approval messages
-
-  // Session settings
-  sessionSecret: 'your-session-secret',
+  redirectUri: 'http://your-domain.com:20295/auth/callback',
+  serverUrl: 'http://your-domain.com:20295',
+  guildId: 'YOUR_GUILD_ID_HERE',
+  verifiedRoleId: 'YOUR_VERIFIED_ROLE_ID_HERE', 
+  staffRoleId: 'YOUR_STAFF_ROLE_ID_HERE', 
+  verificationCategoryId: 'YOUR_VERIFICATION_CATEGORY_ID_HERE',
+  verificationChannelId: 'YOUR_VERIFICATION_CHANNEL_ID_HERE',
+  logChannelId: 'YOUR_LOG_CHANNEL_ID_HERE',
+  approvalChannelId: 'YOUR_APPROVAL_CHANNEL_ID_HERE',
+  heartbeatChannelId: 'YOUR_HEARTBEAT_CHANNEL_ID_HERE',
+  uptimeLogsChannelId: 'YOUR_UPTIME_LOGS_CHANNEL_ID_HERE',
+  resourcesChannelId: 'YOUR_RESOURCES_CHANNEL_ID_HERE',
+  sessionSecret: 'YOUR_SESSION_SECRET_HERE',
   dbPath: './monkey-verified-users.json',
-
-  // Branding
   embedColor: '#3eff06',
   embedFooter: '© MonkeyBytes Tech | The Code Jungle',
-  welcomeMessage: "🎉 Authentication successful! Welcome to the MonkeyBytes jungle! 🌴\n\nYour verification has been approved by our staff team, and you now have full access to all our coding resources, channels, and community features.\n\n🐒 Don't be shy - introduce yourself in our community channels\n💻 Check out our code repositories and learning resources\n🍌 Enjoy your verified status and all the perks that come with it!\n\nIf you need any help, our moderator team is just a message away!",
-  verificationMessage: "To join the MonkeyBytes community, you'll need to verify your account. Click the button below to begin the verification process! 🍌\n\nAfter you authenticate, a staff member will review and approve your request.\n\nThis verification system helps us keep our coding jungle safe and secure.",
-
-  // Heartbeat configuration
-  heartbeatWebhook: "YOUR_HEARTBEAT_WEBHOOK_URL",
+  welcomeMessage: "🎉 You got your banana! Welcome to the MonkeyBytes jungle! 🌴\n\nYour verification has been approved by our monkey elders, and you now have full access to all our coding vines, jungle channels, and community treehouse.\n\n🐒 Don't be shy - introduce yourself to the other monkeys in our community channels\n💻 Explore our code repositories and learning resources in the banana archives\n🍌 Enjoy your verified status and all the jungle perks that come with it!\n\nIf you need help swinging through the vines, our monkey guides are just a message away!",
+  verificationMessage: "To join the MonkeyBytes jungle, you'll need to get your verification banana. Click the button below to begin the verification process! 🍌\n\nAfter you authenticate, a monkey elder will review and approve your request.\n\nThis verification process helps us keep our coding jungle safe from curious snakes and mischievous critters.",
   heartbeatInterval: 630000, // 10.5 minutes
 };
 
-// ==================== INITIALIZE CLIENT ====================
+// ==================== GLOBAL VARIABLES ====================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -60,13 +49,11 @@ const client = new Client({
   ]
 });
 
-// ==================== GLOBAL DATA ====================
-// Initialize userDB with default structure to ensure it exists before any function calls
 let userDB = {
   pendingVerifications: {},
   pendingApprovals: {},
   verifiedUsers: {},
-  deauthorizedUsers: {}, // Track deauthorized users
+  deauthorizedUsers: {},
   statistics: {
     totalVerified: 0,
     verificationsByDay: {},
@@ -75,79 +62,100 @@ let userDB = {
   }
 };
 
-// Global state for pending operations
-const pendingManualVerifications = {};
-const pendingDeauthUsers = {};
+const resourceEntries = {};
+const botStartTime = new Date();
+const downtimeFilePath = './monkey-uptime-history.json';
+const RESTART_SIGNAL_FILE = './restart.signal';
+const STOP_SIGNAL_FILE = './stop.signal';
 
-// ==================== LOGGING ====================
-// ANSI color codes for colored console output
-const colors = {
-  RESET: '\x1b[0m',
-  INFO: '\x1b[36m',     // Cyan
-  SUCCESS: '\x1b[32m',  // Green
-  WARN: '\x1b[33m',     // Yellow
-  ERROR: '\x1b[31m',    // Red
-  FATAL: '\x1b[41m\x1b[37m', // White on Red background
-  DEBUG: '\x1b[90m',    // Gray
-  COMPLETE: '\x1b[32m\x1b[1m', // Bright Green
-  DANGER: '\x1b[31m\x1b[1m',   // Bright Red
-  STARTUP: '\x1b[35m',  // Magenta
-  JOB: '\x1b[94m',      // Light Blue
+// ==================== LOGGER ====================
+const logger = {
+  log: (message, level = 'INFO', error = null) => {
+    console.log(`[${level}] ${message}`);
+    if (error) console.error(error);
+    return true;
+  },
+  info: (msg, err) => logger.log(msg, 'INFO', err),
+  warn: (msg, err) => logger.log(msg, 'WARN', err),
+  error: (msg, err) => logger.log(msg, 'ERROR', err),
+  success: (msg, err) => logger.log(msg, 'SUCCESS', err),
+  startup: (msg, err) => logger.log(msg, 'STARTUP', err)
 };
 
-// Enhanced logging function with colored output
-function log(message, level = 'INFO', error = null) {
-  const timestamp = new Date().toISOString();
-  const color = colors[level] || colors.INFO;
-  const logPrefix = `${color}[${timestamp}] [${level}]${colors.RESET}`;
+// ==================== HTML TEMPLATES ====================
+const htmlTemplates = {
+  wrapper: (content, title, color) => `
+    <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; margin: 50px; background-color: #2c2f33; color: white; }
+          .icon { color: ${color}; font-size: 80px; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #36393f; border-radius: 10px; }
+          h1 { color: ${color}; }
+          .button { display: inline-block; background: #FF9B21; color: white; padding: 10px 20px; 
+                   text-decoration: none; border-radius: 5px; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          ${content}
+        </div>
+      </body>
+    </html>
+  `,
   
-  // Output to console with color
-  if (typeof message === 'object') {
-    console.log(`${logPrefix} Object logging:`);
-    console.log(message);
-  } else {
-    console.log(`${logPrefix} ${message}`);
-  }
+  homePage: () => htmlTemplates.wrapper(`
+    <h1>MonkeyBytes Jungle Authentication</h1>
+    <p>Click the button below to get your banana and access the coding jungle!</p>
+    <a href="/auth" class="button">Get Your Banana 🍌</a>
+  `, 'MonkeyBytes Jungle Authentication', '#FF9B21'),
   
-  // Log error if available with error color
-  if (error) {
-    console.error(`${colors.ERROR}[${timestamp}] [${level}] Error details:${colors.RESET}`, error);
-    
-    // Additional structured error information
-    if (error.stack) {
-      const stackLines = error.stack.split('\n');
-      console.error(`${colors.DANGER}[${timestamp}] [STACK] ${stackLines[0]}${colors.RESET}`);
-      for (let i = 1; i < Math.min(stackLines.length, 4); i++) {
-        console.error(`${colors.DANGER}  ${stackLines[i]}${colors.RESET}`);
-      }
-    }
-  }
-}
+  pendingPage: () => htmlTemplates.wrapper(`
+    <div class="icon">⏳</div>
+    <h1>Awaiting Banana Approval</h1>
+    <p>Your request to join the MonkeyBytes jungle has been sent to the monkey elders for approval.</p>
+    <p>You will be notified once they've reviewed your request!</p>
+    <p>You can close this window and return to Discord.</p>
+  `, 'Awaiting Banana Approval', '#FFA500'),
+  
+  successPage: () => htmlTemplates.wrapper(`
+    <div class="icon">✓</div>
+    <h1>You Got Your Banana!</h1>
+    <p>You have been verified and can now access the MonkeyBytes jungle!</p>
+    <p>You can close this window and return to Discord.</p>
+  `, 'Verification Successful', '#4CAF50'),
+  
+  errorPage: () => htmlTemplates.wrapper(`
+    <div class="icon">❌</div>
+    <h1>Jungle Authentication Error</h1>
+    <p>Oh no! The banana slipped. An error occurred during the verification process.</p>
+    <p>If this problem persists, please contact a monkey elder (server administrator).</p>
+  `, 'Jungle Authentication Error', '#FF5555'),
+  
+  serverErrorPage: () => htmlTemplates.wrapper(`
+    <div class="icon">❌</div>
+    <h1>Jungle Server Error</h1>
+    <p>The monkeys are having technical difficulties. Please try again later!</p>
+  `, 'Jungle Server Error', '#FF5555')
+};
 
 // ==================== DATABASE FUNCTIONS ====================
-// Function to ensure database directory exists
 function ensureDatabaseDirectory() {
   try {
     const dbDir = path.dirname(config.dbPath);
     if (dbDir !== '.' && !fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
-      log(`Created database directory: ${dbDir}`, 'SUCCESS');
     }
     return true;
   } catch (error) {
-    log(`Failed to create database directory`, 'ERROR', error);
+    logger.error(`Failed to create database directory`, error);
     return false;
   }
 }
 
-// Ensure the userDB has the correct structure
 function ensureUserDBStructure() {
-  // Make sure userDB is defined first
-  if (!userDB) {
-    userDB = {};
-    log(`Created new userDB object`, 'STARTUP');
-  }
-  
+  if (!userDB) userDB = {};
   if (!userDB.pendingVerifications) userDB.pendingVerifications = {};
   if (!userDB.pendingApprovals) userDB.pendingApprovals = {};
   if (!userDB.verifiedUsers) userDB.verifiedUsers = {};
@@ -159,63 +167,41 @@ function ensureUserDBStructure() {
       failedAttempts: 0,
       totalDeauths: 0
     };
-  } else if (!userDB.statistics.totalDeauths) {
-    userDB.statistics.totalDeauths = 0;
   }
-  log(`Database structure ensured`, 'STARTUP');
 }
 
-// Save the userDB to the file
 function saveUserDB() {
   try {
-    // First ensure directories exist
     ensureDatabaseDirectory();
-    
-    // Then write the file
     fs.writeFileSync(config.dbPath, JSON.stringify(userDB, null, 2));
-    log(`Database saved to ${config.dbPath}`, 'COMPLETE');
     return true;
   } catch (error) {
-    log(`Failed to save database`, 'ERROR', error);
+    logger.error(`Failed to save database`, error);
     return false;
   }
 }
 
-// Load the userDB from the file or create a new one if it doesn't exist
 function loadUserDB() {
   try {
-    // Make sure our userDB is properly initialized first
     ensureUserDBStructure();
-    
-    // Check if file exists before trying to read it
     if (fs.existsSync(config.dbPath)) {
       try {
         const data = fs.readFileSync(config.dbPath, 'utf8');
-        const parsedData = JSON.parse(data);
-        
-        // Update our userDB with the loaded data
-        userDB = parsedData;
-        
-        // Still ensure structure in case loaded DB is missing fields
+        userDB = JSON.parse(data);
         ensureUserDBStructure();
-        
-        log(`Loaded database from ${config.dbPath} with ${Object.keys(userDB.verifiedUsers || {}).length} verified users`, 'COMPLETE');
         return true;
       } catch (readError) {
-        log(`Error reading database file, using default database`, 'ERROR', readError);
-        // We already initialized userDB above, so just ensure it's saved
+        logger.error(`Error reading database file`, readError);
         saveUserDB();
         return false;
       }
     } else {
-      // Create the database file if it doesn't exist
-      log(`Database file ${config.dbPath} not found. Creating empty database.`, 'WARN');
+      logger.warn(`Database file not found. Creating empty database.`);
       saveUserDB();
       return false;
     }
   } catch (error) {
-    log(`Failed to load database, using empty database`, 'ERROR', error);
-    // We already initialized userDB, so just ensure it's saved
+    logger.error(`Failed to load database`, error);
     saveUserDB();
     return false;
   }
@@ -224,36 +210,38 @@ function loadUserDB() {
 // ==================== EXPRESS SERVER ====================
 const app = express();
 
-// Configure session
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
 app.use(session({
   secret: config.sessionSecret,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, maxAge: 60000 * 60 * 24 }
+  cookie: { 
+    secure: false,
+    maxAge: 60000 * 60 * 24,
+    httpOnly: true,
+    sameSite: 'lax'
+  }
 }));
 
-// Setup Passport
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Serialize/Deserialize user for Passport
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
+passport.serializeUser((user, done) => done(null, user.id));
+passport.deserializeUser((id, done) => done(null, userDB.verifiedUsers[id] || null));
 
-passport.deserializeUser((id, done) => {
-  done(null, userDB.verifiedUsers[id] || null);
-});
-
-// Configure Discord strategy for Passport
 passport.use(new Strategy({
   clientID: config.clientId,
   clientSecret: config.clientSecret,
   callbackURL: config.redirectUri,
   scope: ['identify', 'email', 'guilds.join']
 }, (accessToken, refreshToken, profile, done) => {
-  // Store verification data
-  const timestamp = new Date().toISOString();
   const userData = {
     id: profile.id,
     username: profile.username,
@@ -263,436 +251,225 @@ passport.use(new Strategy({
     email: profile.email,
     accessToken,
     refreshToken,
-    verifiedAt: timestamp,
-    verificationIP: null,
+    verifiedAt: new Date().toISOString(),
     bananaCount: 1,
     tier: "banana"
   };
-
-  log(`User authenticated: ${userData.username}#${userData.discriminator} (${userData.id})`, 'INFO');
+  
+  logger.info(`User authenticated: ${userData.username}#${userData.discriminator} (${userData.id})`);
   return done(null, userData);
 }));
 
-// Home page
-app.get('/', (_req, res) => {
-  res.send(`
-  <html>
-  <head>
-    <title>MonkeyBytes Authentication</title>
-    <style>
-      body { font-family: Arial, sans-serif; text-align: center; margin: 50px; background-color: #2c2f33; color: white; }
-      .button { display: inline-block; background: #FF9B21; color: white; padding: 10px 20px; 
-               text-decoration: none; border-radius: 5px; font-weight: bold; }
-      .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #36393f; border-radius: 10px; }
-      h1 { color: #FF9B21; }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h1>MonkeyBytes Authentication</h1>
-      <p>Click the button below to verify your Discord account and get access to the server.</p>
-      <a href="/auth" class="button">Authenticate with Discord 🍌</a>
-    </div>
-  </body>
-  </html>
-  `);
-});
+app.get('/', (_req, res) => res.send(htmlTemplates.homePage()));
 
-// Auth start
 app.get('/auth', (req, _res, next) => {
   const authCode = Math.random().toString(36).substring(2, 15);
-
-  // Store the auth code in pending verifications
   userDB.pendingVerifications[authCode] = {
-    timestamp: new Date().toISOString(),
-    ip: req.ip
+    timestamp: new Date().toISOString()
   };
   saveUserDB();
-
   req.session.authCode = authCode;
   next();
 }, passport.authenticate('discord'));
 
-// Manual approval auth route
-app.get('/auth/manual', (req, _res, next) => {
-  const authCode = Math.random().toString(36).substring(2, 15);
-
-  // Store the auth code in pending verifications
-  userDB.pendingVerifications[authCode] = {
-    timestamp: new Date().toISOString(),
-    ip: req.ip,
-    requiresApproval: true
-  };
-  saveUserDB();
-
-  req.session.authCode = authCode;
-  req.session.requiresApproval = true;
-  next();
-}, passport.authenticate('discord'));
-
-// Auth callback
 app.get('/auth/callback', 
   passport.authenticate('discord', { failureRedirect: '/' }),
   async (req, res) => {
     try {
       ensureUserDBStructure();
       
-      // Record verification IP if available
       if (req.user && req.session && req.session.authCode) {
-        const pendingVerification = userDB.pendingVerifications[req.session.authCode];
-        if (pendingVerification) {
-          req.user.verificationIP = pendingVerification.ip;
+        if (userDB.pendingVerifications[req.session.authCode]) {
           delete userDB.pendingVerifications[req.session.authCode];
         }
       }
       
-      // Check if user was previously deauthorized
       const wasDeauthorized = req.user && userDB.deauthorizedUsers && userDB.deauthorizedUsers[req.user.id];
       if (wasDeauthorized) {
-        // Add this information to their request data
         req.user.wasDeauthorized = true;
         req.user.previousDeauthReason = userDB.deauthorizedUsers[req.user.id].deauthorizationReason;
       }
       
-      // Add user to verified database or pending approvals
       if (req.user) {
-        // CHANGE: Always require manual approval for all users
-        // Check if this authentication requires manual approval
-        if (true) { // Always require manual approval
-          // Add to pending approvals with notification flag
-          req.user.notificationSent = true; // Add flag to track if notification sent
-          userDB.pendingApprovals[req.user.id] = req.user;
-          saveUserDB();
-          
-          // Notify staff for approval
-          sendVerificationRequestToChannel(req.user.id, req.user.username);
-          
-          // Show waiting for approval page
-          return res.send(`
-          <html>
-            <head>
-              <title>Verification Pending Approval</title>
-              <style>
-                body { font-family: Arial, sans-serif; text-align: center; margin: 50px; background-color: #2c2f33; color: white; }
-                .pending { color: #FFA500; font-size: 80px; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #36393f; border-radius: 10px; }
-                h1 { color: #FFA500; }
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <div class="pending">⏳</div>
-                <h1>Verification Pending Approval</h1>
-                <p>Your verification request has been sent to the MonkeyBytes staff for approval.</p>
-                <p>You will be notified once your request has been processed.</p>
-                <p>You can close this window and return to Discord.</p>
-              </div>
-            </body>
-          </html>
-          `);
-        } else {
-          // This code is now unreachable but kept for reference
-          // Regular verification flow
-          userDB.verifiedUsers[req.user.id] = req.user;
-          
-          // Update statistics
-          userDB.statistics.totalVerified++;
-          const today = new Date().toISOString().split('T')[0];
-          userDB.statistics.verificationsByDay[today] = 
-            (userDB.statistics.verificationsByDay[today] || 0) + 1;
-          
-          saveUserDB();
-          
-          // Add the verified role
-          const guild = client.guilds.cache.get(config.guildId);
-          if (guild) {
-            try {
-              const member = await guild.members.fetch(req.user.id);
-              if (member) {
-                await member.roles.add(config.verifiedRoleId);
-                
-                // Log the verification
-                if (config.logChannelId) {
-                  const logChannel = guild.channels.cache.get(config.logChannelId);
-                  if (logChannel) {
-                    const embed = new EmbedBuilder()
-                      .setTitle('🍌 New User Verified')
-                      .setDescription(`<@${req.user.id}> has been verified!`)
-                      .addFields(
-                        { name: 'Username', value: `${req.user.username}#${req.user.discriminator}`, inline: true },
-                        { name: 'User ID', value: req.user.id, inline: true }
-                      )
-                      .setColor(config.embedColor)
-                      .setFooter({ text: config.embedFooter })
-                      .setTimestamp();
-                    
-                    await logChannel.send({ embeds: [embed] });
-                  }
-                }
-                
-                // Send welcome message to the user
-                try {
-                  await member.send({
-                    embeds: [
-                      new EmbedBuilder()
-                        .setTitle('🎉 Welcome to MonkeyBytes!')
-                        .setDescription(config.welcomeMessage)
-                        .setColor(config.embedColor)
-                        .setFooter({ text: config.embedFooter })
-                    ]
-                  });
-                } catch (dmError) {
-                  log(`Could not send welcome DM to ${req.user.username}`, 'WARN', dmError);
-                }
-                
-                log(`User ${req.user.username} (${req.user.id}) verified and given the verified role`, 'SUCCESS');
-              }
-            } catch (roleError) {
-              log(`Error assigning verified role`, 'ERROR', roleError);
-            }
-          }
-        }
+        req.user.notificationSent = true;
+        userDB.pendingApprovals[req.user.id] = req.user;
+        saveUserDB();
+        
+        await sendVerificationRequestToChannel(req.user.id, req.user.username);
+        return res.send(htmlTemplates.pendingPage());
       }
       
-      // Simple success page
-      res.send(`
-        <html>
-          <head>
-            <title>Verification Successful</title>
-            <style>
-              body { font-family: Arial, sans-serif; text-align: center; margin: 50px; background-color: #2c2f33; color: white; }
-              .success { color: #4CAF50; font-size: 80px; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #36393f; border-radius: 10px; }
-              h1 { color: #4CAF50; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="success">✓</div>
-              <h1>Verification Successful!</h1>
-              <p>You have been verified and can now access the MonkeyBytes Discord server!</p>
-              <p>You can close this window and return to Discord.</p>
-            </div>
-          </body>
-        </html>
-      `);
+      res.send(htmlTemplates.successPage());
     } catch (error) {
-      log(`Error during authentication callback`, 'ERROR', error);
-      res.status(500).send('An error occurred during verification. Please try again later.');
+      logger.error(`Error during authentication callback`, error);
+      res.status(500).send(htmlTemplates.errorPage());
     }
   }
 );
 
-// Status endpoint
-app.get('/status', (_req, res) => {
-  res.json({ status: 'ok', timestamp: Date.now() });
+app.get('/status', (req, res) => {
+  const clientIp = req.ip || req.socket.remoteAddress;
+  const isLocalRequest = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.startsWith('192.168.');
+  
+  if (isLocalRequest) {
+    res.json({
+      status: 'ok',
+      timestamp: Date.now(),
+      uptime: process.uptime(),
+      memory: {
+        heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      },
+      stats: {
+        verifiedUsers: Object.keys(userDB.verifiedUsers || {}).length,
+        pendingUsers: Object.keys(userDB.pendingApprovals || {}).length
+      }
+    });
+  } else {
+    res.json({ status: 'ok', timestamp: Date.now() });
+  }
 });
 
-// Start Express server
-const server = app.listen(config.port, () => {
-  log(`Server running on port ${config.port}`, 'STARTUP');
+app.use((err, _req, res, _next) => {
+  logger.error('Express server error', err);
+  res.status(500).send(htmlTemplates.serverErrorPage());
 });
 
 // ==================== DISCORD BOT FUNCTIONS ====================
-// Array of status messages that rotate
-const statusMessages = [
-  { text: '🍌 Type /verify to authenticate', type: ActivityType.Playing },
-  { text: '👆 Click the verify button in #get-your-banana', type: ActivityType.Watching },
-  { text: '🔑 Verify for full server access', type: ActivityType.Competing },
-  { text: '❓ Need help? Ask a staff member', type: ActivityType.Listening }
-];
-
-// Track current status index
-let currentStatusIndex = 0;
-
-// Function to set and rotate presence
 function setRotatingPresence() {
-  const status = statusMessages[currentStatusIndex];
+  const statusMessages = [
+    { text: '🍌 Type /help for jungle guidance', type: ActivityType.Playing },
+    { text: '👆 Click for a banana in #get-your-banana', type: ActivityType.Watching },
+    { text: '🔑 Get verified for full jungle access', type: ActivityType.Competing },
+    { text: '❓ Lost? Use /help command', type: ActivityType.Listening }
+  ];
   
-  client.user.setPresence({
-    activities: [{ 
-      name: status.text, 
-      type: status.type 
-    }],
-    status: 'online'
-  });
+  let currentStatusIndex = 0;
   
-  // Update index for next call
-  currentStatusIndex = (currentStatusIndex + 1) % statusMessages.length;
-  
-  log(`Bot presence updated: ${status.text}`, 'JOB');
-}
-
-// Set up rotating presence system
-function setBotPresence() {
-  // Set initial status
-  setRotatingPresence();
-  
-  // Set interval to change status every 12 seconds
-  setInterval(setRotatingPresence, 12000);
-  
-  log(`Bot presence rotation started`, 'STARTUP');
-}
-
-// Function to send verification request to the approval channel with buttons
-async function sendVerificationRequestToChannel(userId, username) {
-  if (!userId || !username) {
-    log(`Invalid user information for approval notification`, 'WARN');
-    return false;
+  function updateStatus() {
+    const status = statusMessages[currentStatusIndex];
+    client.user.setPresence({
+      activities: [{ name: status.text, type: status.type }],
+      status: 'online'
+    });
+    currentStatusIndex = (currentStatusIndex + 1) % statusMessages.length;
   }
+  
+  updateStatus();
+  setInterval(updateStatus, 12000);
+}
+
+async function sendVerificationRequestToChannel(userId, username) {
+  if (!userId || !username) return false;
   
   try {
     const guild = client.guilds.cache.get(config.guildId);
-    if (!guild) {
-      log(`Guild not found: ${config.guildId}`, 'WARN');
-      return false;
-    }
+    if (!guild) return false;
     
     const approvalChannel = guild.channels.cache.get(config.approvalChannelId);
-    if (!approvalChannel) {
-      log(`Approval channel not found: ${config.approvalChannelId}`, 'WARN');
-      return false;
-    }
+    if (!approvalChannel) return false;
     
-    // Check if user was previously deauthorized
     const wasDeauthorized = userDB.deauthorizedUsers && userDB.deauthorizedUsers[userId];
     
-    // Create accept button
     const acceptButton = new ButtonBuilder()
       .setCustomId(`approve_${userId}`)
       .setLabel('✅ Accept')
       .setStyle(ButtonStyle.Success);
     
-    // Create deny button
     const denyButton = new ButtonBuilder()
       .setCustomId(`deny_${userId}`)
       .setLabel('❌ Deny')
       .setStyle(ButtonStyle.Danger);
     
-    // Add buttons to action row
     const actionRow = new ActionRowBuilder()
       .addComponents(acceptButton, denyButton);
     
-    // Create embed
     const embed = new EmbedBuilder()
-      .setTitle('🍌 Pending Verification Request')
-      .setDescription(`<@${userId}> (${username}) is requesting verification.${
+      .setTitle('🍌 Pending Banana Request')
+      .setDescription(`<@${userId}> (${username}) is requesting to join the jungle.${
         wasDeauthorized 
-          ? `\n\n⚠️ **Note:** This user was previously deauthorized.\n**Reason:** ${wasDeauthorized.deauthorizationReason || 'No reason provided'}` 
+          ? `\n\n⚠️ **Note:** This monkey previously had their banana taken.\n**Reason:** ${wasDeauthorized.deauthorizationReason || 'No reason provided'}` 
           : ''
       }`)
-      .setColor(wasDeauthorized ? '#FF9B21' : config.embedColor) // Orange for previously deauthed users
+      .setColor(wasDeauthorized ? '#FF9B21' : config.embedColor)
       .setFooter({ text: config.embedFooter })
       .setTimestamp();
     
-    // Send message with buttons
-    await approvalChannel.send({ 
-      embeds: [embed],
-      components: [actionRow]
-    });
-    
-    log(`Sent verification request to approval channel for user ${username} (${userId})`, 'JOB');
+    await approvalChannel.send({ embeds: [embed], components: [actionRow] });
     return true;
   } catch (error) {
-    log(`Error sending verification request to channel`, 'ERROR', error);
+    logger.error(`Error sending verification request`, error);
     return false;
   }
 }
 
 async function processVerificationApproval(userId, approved, staffId) {
   try {
-    // Check if user is in pending approvals
     if (!userDB.pendingApprovals || !userDB.pendingApprovals[userId]) {
-      log(`User ${userId} not found in pending approvals`, 'WARN');
       return false;
     }
     
     const userData = userDB.pendingApprovals[userId];
     
     if (approved) {
-      // Check if user was previously deauthorized
       const wasDeauthed = userDB.deauthorizedUsers && userDB.deauthorizedUsers[userId];
       
-      // Move from pending to verified
       userDB.verifiedUsers[userId] = userData;
       
-      // Remove from deauthorized users if they were there
       if (wasDeauthed) {
         delete userDB.deauthorizedUsers[userId];
       }
       
-      // Update statistics
       userDB.statistics.totalVerified++;
       const today = new Date().toISOString().split('T')[0];
       userDB.statistics.verificationsByDay[today] = 
         (userDB.statistics.verificationsByDay[today] || 0) + 1;
       
-      // Add verified role to user
       const guild = client.guilds.cache.get(config.guildId);
       if (guild) {
         try {
-          const member = await guild.members.fetch(userId).catch(err => {
-            log(`Error fetching member ${userId}`, 'ERROR', err);
-            return null;
-          });
+          const member = await guild.members.fetch(userId).catch(() => null);
           
           if (member) {
             await member.roles.add(config.verifiedRoleId).catch(err => {
-              log(`Error adding role to member ${userId}`, 'ERROR', err);
+              logger.error(`Error adding role to member ${userId}`, err);
             });
             
             // Log the verification
-            if (config.logChannelId) {
-              const logChannel = guild.channels.cache.get(config.logChannelId);
-              if (logChannel) {
-                const embed = new EmbedBuilder()
-                  .setTitle('🍌 New User Verified (Staff Approved)')
-                  .setDescription(`<@${userId}> has been verified after staff approval!`)
-                  .addFields(
-                    { name: 'Username', value: `${userData.username}#${userData.discriminator}`, inline: true },
-                    { name: 'User ID', value: userId, inline: true },
-                    { name: 'Approved By', value: `<@${staffId}>`, inline: true }
-                  )
-                  .setColor(config.embedColor)
-                  .setFooter({ text: config.embedFooter })
-                  .setTimestamp();
-                
-                await logChannel.send({ embeds: [embed] }).catch(err => {
-                  log(`Error sending log message`, 'WARN', err);
-                });
-              }
+            const logChannel = guild.channels.cache.get(config.logChannelId);
+            if (logChannel) {
+              const embed = new EmbedBuilder()
+                .setTitle('🍌 New Monkey in the Jungle')
+                .setDescription(`<@${userId}> has been given their banana after jungle elder approval!`)
+                .addFields(
+                  { name: 'Monkey Name', value: `${userData.username}#${userData.discriminator}`, inline: true },
+                  { name: 'Monkey ID', value: userId, inline: true },
+                  { name: 'Approved By', value: `<@${staffId}>`, inline: true }
+                )
+                .setColor(config.embedColor)
+                .setFooter({ text: config.embedFooter })
+                .setTimestamp();
+              
+              await logChannel.send({ embeds: [embed] }).catch(() => {});
             }
             
-            // Try to send welcome message to the user
+            // Send welcome message
             try {
               await member.send({
                 embeds: [
                   new EmbedBuilder()
-                    .setTitle('🎉 Welcome to MonkeyBytes!')
+                    .setTitle('🎉 Welcome to the MonkeyBytes Jungle!')
                     .setDescription(config.welcomeMessage)
                     .setColor(config.embedColor)
                     .setFooter({ text: config.embedFooter })
                 ]
               });
-              log(`Sent welcome DM to ${userData.username}`, 'SUCCESS');
             } catch (dmError) {
-              log(`Could not send welcome DM to ${userData.username}`, 'WARN', dmError);
-              
-              // Try to record in log channel that DM failed
-              if (config.logChannelId) {
-                const logChannel = guild.channels.cache.get(config.logChannelId);
-                if (logChannel) {
-                  await logChannel.send({
-                    content: `⚠️ NOTE: Could not send welcome DM to <@${userId}>. They may have DMs disabled.`
-                  }).catch(err => {
-                    log(`Error logging DM failure`, 'WARN', err);
-                  });
-                }
-              }
+              logger.warn(`Could not send welcome DM to ${userData.username}`, dmError);
             }
           }
         } catch (roleError) {
-          log(`Error assigning verified role`, 'ERROR', roleError);
+          logger.error(`Error assigning verified role`, roleError);
         }
       }
     } else {
@@ -702,24 +479,22 @@ async function processVerificationApproval(userId, approved, staffId) {
         const logChannel = guild.channels.cache.get(config.logChannelId);
         if (logChannel) {
           const embed = new EmbedBuilder()
-            .setTitle('❌ User Verification Denied')
-            .setDescription(`<@${userId}>'s verification request was denied by <@${staffId}>.`)
+            .setTitle('❌ Banana Request Denied')
+            .setDescription(`<@${userId}>'s request to join the jungle was denied by <@${staffId}>.`)
             .addFields(
-              { name: 'Username', value: `${userData.username}#${userData.discriminator}`, inline: true },
-              { name: 'User ID', value: userId, inline: true },
+              { name: 'Monkey Name', value: `${userData.username}#${userData.discriminator}`, inline: true },
+              { name: 'Monkey ID', value: userId, inline: true },
               { name: 'Denied By', value: `<@${staffId}>`, inline: true }
             )
             .setColor('#FF0000')
             .setFooter({ text: config.embedFooter })
             .setTimestamp();
           
-          await logChannel.send({ embeds: [embed] }).catch(err => {
-            log(`Error sending log message`, 'WARN', err);
-          });
+          await logChannel.send({ embeds: [embed] }).catch(() => {});
         }
       }
       
-      // Try to notify the user
+      // Notify the user of denial
       try {
         const guild = client.guilds.cache.get(config.guildId);
         if (guild) {
@@ -728,29 +503,25 @@ async function processVerificationApproval(userId, approved, staffId) {
             await member.send({
               embeds: [
                 new EmbedBuilder()
-                  .setTitle('❌ Verification Declined')
-                  .setDescription(`Your verification request for the MonkeyBytes server has been declined by staff. If you believe this is an error, please contact the server administrators.`)
+                  .setTitle('❌ Banana Access Denied')
+                  .setDescription(`Your request to join the MonkeyBytes jungle has been declined by our monkey elders. If you believe this is a mistake in the jungle, please contact the server administrators to appeal.`)
                   .setColor('#FF0000')
                   .setFooter({ text: config.embedFooter })
               ]
-            }).catch(err => {
-              log(`Error sending denial notification`, 'WARN', err);
-            });
+            }).catch(() => {});
           }
         }
       } catch (dmError) {
-        log(`Could not send denial DM`, 'WARN', dmError);
+        logger.warn(`Could not send denial DM`, dmError);
       }
     }
     
-    // Remove from pending approvals
     delete userDB.pendingApprovals[userId];
     saveUserDB();
     
-    log(`User ${userId} approval processed: ${approved ? 'Approved' : 'Denied'} by ${staffId}`, approved ? 'COMPLETE' : 'DANGER');
     return true;
   } catch (error) {
-    log(`Error processing approval for ${userId}`, 'ERROR', error);
+    logger.error(`Error processing approval for ${userId}`, error);
     return false;
   }
 }
@@ -769,243 +540,31 @@ async function checkPendingApprovals() {
     const pendingCount = pendingEntries.length;
     
     if (pendingCount > 0) {
-      log(`Found ${pendingCount} pending approvals, sending notifications`, 'JOB');
-      
-      // Send verification requests to the approval channel
       const guild = client.guilds.cache.get(config.guildId);
-      if (!guild) {
-        log(`Guild not found: ${config.guildId}`, 'WARN');
-        return pendingCount;
-      }
+      if (!guild) return pendingCount;
       
       const approvalChannel = guild.channels.cache.get(config.approvalChannelId);
-      if (!approvalChannel) {
-        log(`Approval channel not found: ${config.approvalChannelId}`, 'WARN');
-        return pendingCount;
-      }
+      if (!approvalChannel) return pendingCount;
       
-      // Send individual requests only for entries that haven't been notified yet
       for (const [userId, userData] of pendingEntries) {
-        // Skip if notification was already sent
-        if (userData.notificationSent) {
-          continue;
-        }
+        if (userData.notificationSent) continue;
         
         const success = await sendVerificationRequestToChannel(userId, userData.username);
         
         if (success) {
-          // Mark as notified
           userData.notificationSent = true;
           saveUserDB();
         } else {
-          log(`Pausing notifications due to previous failure`, 'WARN');
           break;
         }
         
-        // Add a delay between notifications to avoid rate limits
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
     return pendingCount;
   } catch (error) {
-    log(`Error checking pending approvals`, 'ERROR', error);
+    logger.error(`Error checking pending approvals`, error);
     return 0;
-  }
-}
-
-async function safeDeleteMessages(channel, messages) {
-  try {
-    // Filter messages to those less than 14 days old
-    const twoWeeksAgo = Date.now() - 12096e5; // 14 days in milliseconds
-    const recentMessages = messages.filter(msg => msg.createdTimestamp > twoWeeksAgo);
-    
-    if (recentMessages.size > 0) {
-      await channel.bulkDelete(recentMessages).catch(err => {
-        log(`Error bulk deleting recent messages`, 'WARN', err);
-      });
-    }
-    
-    // For older messages, delete them individually
-    const oldMessages = messages.filter(msg => msg.createdTimestamp <= twoWeeksAgo);
-    for (const [_, message] of oldMessages) {
-      try {
-        await message.delete().catch(err => {
-          log(`Error deleting old message ${message.id}`, 'WARN', err);
-        });
-        // Small delay to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } catch (err) {
-        log(`Failed to delete message ${message.id}`, 'WARN', err);
-      }
-    }
-    return true;
-  } catch (error) {
-    log(`Error in message deletion process`, 'ERROR', error);
-    return false;
-  }
-}
-
-async function setupVerificationSystem(guild) {
-  try {
-    // Create or find verification category
-    let category;
-    if (config.verificationCategoryId) {
-      category = guild.channels.cache.get(config.verificationCategoryId);
-    }
-
-    if (!category) {
-      log(`Creating verification category`, 'JOB');
-      category = await guild.channels.create({
-        name: 'MONKEYBYTES VERIFICATION',
-        type: ChannelType.GuildCategory,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone.id,
-            allow: [PermissionsBitField.Flags.ViewChannel],
-            deny: [PermissionsBitField.Flags.SendMessages]
-          },
-          {
-            id: client.user.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages,
-                    PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ReadMessageHistory]
-          }
-        ]
-      });
-      config.verificationCategoryId = category.id;
-    }
-
-    // Create or find verification channel
-    let verificationChannel;
-    if (config.verificationChannelId) {
-      verificationChannel = guild.channels.cache.get(config.verificationChannelId);
-    }
-
-    if (!verificationChannel) {
-      log(`Creating verification channel`, 'JOB');
-      verificationChannel = await guild.channels.create({
-        name: 'get-your-banana',
-        type: ChannelType.GuildText,
-        parent: category,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory],
-            deny: [PermissionsBitField.Flags.SendMessages]
-          },
-          {
-            id: client.user.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages,
-                   PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ReadMessageHistory]
-          }
-        ]
-      });
-      config.verificationChannelId = verificationChannel.id;
-      
-      // Send the verification message
-      await sendVerificationMessage(verificationChannel);
-    }
-
-    // Create or find log channel
-    let logChannel;
-    if (config.logChannelId) {
-      logChannel = guild.channels.cache.get(config.logChannelId);
-    }
-
-    if (!logChannel) {
-      log(`Creating log channel`, 'JOB');
-      logChannel = await guild.channels.create({
-        name: 'monkey-business-logs',
-        type: ChannelType.GuildText,
-        parent: category,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone.id,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: config.verifiedRoleId,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: client.user.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages,
-                   PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ReadMessageHistory]
-          }
-        ]
-      });
-      config.logChannelId = logChannel.id;
-      
-      // Add permission for admins to view logs
-      const adminRoles = guild.roles.cache.filter(role => 
-        role.permissions.has(PermissionsBitField.Flags.Administrator)
-      );
-      
-      for (const [_, role] of adminRoles) {
-        await logChannel.permissionOverwrites.create(role, {
-          ViewChannel: true,
-          ReadMessageHistory: true
-        });
-      }
-    }
-
-    // Create or find approval channel
-    let approvalChannel;
-    if (config.approvalChannelId) {
-      approvalChannel = guild.channels.cache.get(config.approvalChannelId);
-    }
-
-    if (!approvalChannel) {
-      log(`Creating approval channel`, 'JOB');
-      approvalChannel = await guild.channels.create({
-        name: 'verification-approvals',
-        type: ChannelType.GuildText,
-        parent: category,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone.id,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: config.verifiedRoleId,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: client.user.id,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages,
-                  PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.ReadMessageHistory]
-          }
-        ]
-      });
-      config.approvalChannelId = approvalChannel.id;
-      
-      // Add permission for staff to view and interact with approval channel
-      if (config.staffRoleId) {
-        const staffRole = guild.roles.cache.get(config.staffRoleId);
-        if (staffRole) {
-          await approvalChannel.permissionOverwrites.create(staffRole, {
-            ViewChannel: true,
-            ReadMessageHistory: true
-          });
-        }
-      }
-      
-      // Add permission for admins as well
-      const adminRoles = guild.roles.cache.filter(role => 
-        role.permissions.has(PermissionsBitField.Flags.Administrator)
-      );
-      
-      for (const [_, role] of adminRoles) {
-        await approvalChannel.permissionOverwrites.create(role, {
-          ViewChannel: true,
-          ReadMessageHistory: true
-        });
-      }
-    }
-
-    return { category, verificationChannel, logChannel, approvalChannel };
-  } catch (error) {
-    log(`Error setting up verification system`, 'ERROR', error);
-    return null;
   }
 }
 
@@ -1017,7 +576,7 @@ function isStaffMember(member) {
 async function sendVerificationMessage(channel) {
   const verifyButton = new ButtonBuilder()
     .setCustomId('verify_button')
-    .setLabel('🍌 Get Verified')
+    .setLabel('🍌 Get Your Banana')
     .setStyle(ButtonStyle.Primary);
 
   const row = new ActionRowBuilder().addComponents(verifyButton);
@@ -1030,335 +589,1376 @@ async function sendVerificationMessage(channel) {
     .setTimestamp();
 
   await channel.send({ embeds: [embed], components: [row] });
-  log(`Sent verification message to channel ${channel.id}`, 'JOB');
-}
-
-// New function to check if there's already a verification message in the specified channel
-async function checkAndSendVerificationToChannel(channelId) {
-  try {
-    // Get the specified channel
-    const guild = client.guilds.cache.get(config.guildId);
-    if (!guild) {
-      log(`Guild with ID ${config.guildId} not found`, 'ERROR');
-      return false;
-    }
-    
-    const channel = guild.channels.cache.get(channelId);
-    if (!channel) {
-      log(`Channel with ID ${channelId} not found`, 'ERROR');
-      return false;
-    }
-    
-    // Check if there's already a verification message with a button
-    const messages = await channel.messages.fetch({ limit: 10 });
-    const verificationMessages = messages.filter(msg => 
-      msg.author.id === client.user.id && 
-      msg.components.length > 0 &&
-      msg.components[0].components.some(c => c.customId === 'verify_button')
-    );
-    
-    // If there's already a verification message, don't send a new one
-    if (verificationMessages.size > 0) {
-      log(`Verification message already exists in channel ${channelId}`, 'INFO');
-      return false;
-    }
-    
-    // No verification message found, send a new one
-    await sendVerificationMessage(channel);
-    log(`Sent verification message to channel ${channelId}`, 'SUCCESS');
-    return true;
-  } catch (error) {
-    log(`Error checking/sending verification message to channel ${channelId}`, 'ERROR', error);
-    return false;
-  }
-}
-
-async function registerCommands(guild) {
-  try {
-    const commandsData = [
-      // Public slash command - Verify
-      {
-        name: 'verify',
-        description: 'Get verified on the MonkeyBytes server',
-        type: ApplicationCommandType.ChatInput
-      },
-      
-      // Right-click user context menu command
-      {
-        name: 'Verify with MonkeyBytes',
-        type: ApplicationCommandType.User
-      },
-      
-      // Staff commands - Verify and deauth
-      {
-        name: 'manualverify',
-        description: '[Staff] Manually verify a user',
-        type: ApplicationCommandType.ChatInput,
-        options: [
-          {
-            name: 'user',
-            description: 'The user to verify',
-            type: 6, // USER type
-            required: true
-          }
-        ]
-      },
-      {
-        name: 'deauth',
-        description: '[Staff] Remove verification from a user',
-        type: ApplicationCommandType.ChatInput,
-        options: [
-          {
-            name: 'user',
-            description: 'The user to deauthorize',
-            type: 6, // USER type
-            required: true
-          },
-          {
-            name: 'reason',
-            description: 'Reason for deauthorization',
-            type: 3, // STRING type
-            required: false
-          }
-        ]
-      },
-      
-      // Stats command
-      {
-        name: 'stats',
-        description: '[Staff] View verification statistics',
-        type: ApplicationCommandType.ChatInput
-      },
-      
-      // Setup command
-      {
-        name: 'setup',
-        description: '[Staff] Setup the verification system',
-        type: ApplicationCommandType.ChatInput
-      },
-      
-      // Pending approvals command
-      {
-        name: 'pendingapprovals',
-        description: '[Staff] View pending approvals',
-        type: ApplicationCommandType.ChatInput
-      },
-      
-      // Update verification message command
-      {
-        name: 'updateverifymsg',
-        description: '[Staff] Update the verification message',
-        type: ApplicationCommandType.ChatInput
-      },
-      
-      // NEW: Update verification message in additional channel command
-      {
-        name: 'updateadditionalverifymsg',
-        description: '[Staff] Update the verification message in the additional channel',
-        type: ApplicationCommandType.ChatInput
-      }
-    ];
-    
-    await guild.commands.set(commandsData);
-    log(`Registered ${commandsData.length} commands in guild ${guild.name}`, 'COMPLETE');
-    return true;
-  } catch (error) {
-    log(`Error registering commands`, 'ERROR', error);
-    return false;
-  }
 }
 
 function sendVerificationUrl(interaction) {
   const authUrl = `${config.serverUrl}/auth`;
   const embed = new EmbedBuilder()
-    .setTitle('🐵 MonkeyBytes Verification')
-    .setDescription(`Click [here to verify](${authUrl}) your account.\n\nThis will open the authentication page. After authorizing with Discord, you'll receive the verified role.`)
+    .setTitle('🐵 Get Your Banana!')
+    .setDescription(`Click [here to verify](${authUrl}) your account and join the jungle.\n\nThis will open the authentication page. After authorizing with Discord, the monkey elders will review your request.`)
     .setColor(config.embedColor)
     .setFooter({ text: config.embedFooter })
     .setTimestamp();
 
-  return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  return interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
-// ==================== HEARTBEAT FUNCTION ====================
+// ==================== COMMAND REGISTRATION ====================
+async function registerCommands(guild) {
+  try {
+    const memberCommands = [
+      {
+        name: 'help',
+        description: 'Get help with using the MonkeyBytes server',
+        type: ApplicationCommandType.ChatInput
+      },
+      {
+        name: 'verify',
+        description: 'Start the verification process for the MonkeyBytes server',
+        type: ApplicationCommandType.ChatInput
+      },
+      {
+        name: 'resources',
+        description: 'View available coding resources and how to access them',
+        type: ApplicationCommandType.ChatInput
+      },
+      {
+        name: 'roles',
+        description: 'View information about server roles and how to get them',
+        type: ApplicationCommandType.ChatInput
+      },
+      {
+        name: 'report',
+        description: 'Report an issue to the staff team',
+        type: ApplicationCommandType.ChatInput,
+        options: [
+          {
+            name: 'issue',
+            description: 'Description of the issue',
+            type: 3,
+            required: true
+          }
+        ]
+      }
+    ];
+    
+    const staffCommands = [
+      {
+        name: 'Verify Member',
+        type: ApplicationCommandType.User
+      },
+      {
+        name: 'Deauthorize Member',
+        type: ApplicationCommandType.User
+      },
+      {
+        name: 'View User Stats',
+        type: ApplicationCommandType.User
+      },
+      {
+        name: 'Mark as Rule Violation',
+        type: ApplicationCommandType.Message
+      },
+      {
+        name: 'Add to Resources',
+        type: ApplicationCommandType.Message
+      },
+      {
+        name: 'restart',
+        description: 'Restart the bot (Staff Only)',
+        type: ApplicationCommandType.ChatInput,
+        options: [
+          {
+            name: 'reason',
+            description: 'Reason for restart (optional)',
+            type: 3,
+            required: false
+          }
+        ]
+      },
+      {
+        name: 'stop',
+        description: 'Stop the bot (Staff Only)',
+        type: ApplicationCommandType.ChatInput,
+        options: [
+          {
+            name: 'reason',
+            description: 'Reason for stopping the bot (optional)',
+            type: 3,
+            required: false
+          }
+        ]
+      }
+    ];
+    
+    await guild.commands.set([...memberCommands, ...staffCommands]);
+    return true;
+  } catch (error) {
+    logger.error(`Error registering commands`, error);
+    return false;
+  }
+}
+
+// ==================== COMMAND HANDLERS ====================
+// Basic command handlers
+const commandHandlers = {
+  help: async (interaction) => {
+    const embed = new EmbedBuilder()
+      .setTitle('🐵 MonkeyBytes Jungle Guide')
+      .setDescription('Welcome to the coding jungle! Here are some banana-powered commands to help you navigate:')
+      .addFields(
+        { name: '/help', value: 'Shows this jungle guide', inline: true },
+        { name: '/verify', value: 'Get your banana (verification access)', inline: true },
+        { name: '/resources', value: 'Discover coding treasures', inline: true },
+        { name: '/roles', value: 'Learn about jungle tribes (roles)', inline: true },
+        { name: '/report', value: 'Alert monkey guards about issues', inline: true }
+      )
+      .setColor(config.embedColor)
+      .setFooter({ text: config.embedFooter })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  },
+  
+  resources: async (interaction) => {
+    const embed = new EmbedBuilder()
+      .setTitle('🍌 Code Jungle Treasures')
+      .setDescription('Explore these valuable coding resources in our monkey community:')
+      .addFields(
+        { name: '📚 Learning Vines', value: 'Swing by #beginner-help, #code-discussion, and #project-showcase to learn and share your work.' },
+        { name: '🛠️ Monkey Tools', value: 'Our jungle has dedicated zones for popular frameworks and tools. Explore the channel list to find your coding habitat.' },
+        { name: '📝 Banana Archives', value: 'Check the pinned messages in each channel for valuable code snippets and preserved knowledge!' },
+        { name: '🔗 Outside World Links', value: 'Visit our website for specially curated tutorials and documentation links for monkey coders of all levels.' }
+      )
+      .setColor(config.embedColor)
+      .setFooter({ text: config.embedFooter })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  },
+  
+  roles: async (interaction) => {
+    const embed = new EmbedBuilder()
+      .setTitle('🍌 Jungle Tribe Roles')
+      .setDescription('Discover the different tribes you can join in our coding jungle:')
+      .addFields(
+        { name: '🔑 Verified Monkey', value: 'Basic jungle access. Obtained by getting your banana (verification).' },
+        { name: '💻 Language Tribes', value: 'Visit the #role-selection tree to choose your programming language tribes.' },
+        { name: '🏆 Experience Levels', value: 'Show your jungle experience level in the #role-selection area.' },
+        { name: '⭐ Community Guide', value: 'Awarded to active monkeys who help others find their way through the code jungle.' },
+        { name: '🍌 Banana Master', value: 'Elite status for exceptionally helpful jungle members. Nominated by the monkey elders.' }
+      )
+      .setColor(config.embedColor)
+      .setFooter({ text: config.embedFooter })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  },
+  
+  report: async (interaction) => {
+    const issue = interaction.options.getString('issue');
+    const user = interaction.user;
+    
+    const reportEmbed = new EmbedBuilder()
+      .setTitle('🚨 Jungle Incident Report')
+      .setDescription(`A report has been submitted by <@${user.id}>`)
+      .addFields(
+        { name: 'Reporting Monkey', value: `${user.username}#${user.discriminator || '0'}`, inline: true },
+        { name: 'Monkey ID', value: user.id, inline: true },
+        { name: 'Issue', value: issue }
+      )
+      .setColor('#FF9B21')
+      .setFooter({ text: config.embedFooter })
+      .setTimestamp();
+    
+    try {
+      const guild = interaction.guild;
+      const logChannel = guild.channels.cache.get(config.logChannelId);
+      
+      if (logChannel) {
+        await logChannel.send({ embeds: [reportEmbed] });
+        
+        await interaction.reply({ 
+          content: 'Your alert has been sent to the monkey guards. Thank you for helping keep our code jungle safe! 🐵', 
+          ephemeral: true 
+        });
+      } else {
+        throw new Error('Log channel not found');
+      }
+    } catch (error) {
+      logger.error(`Error processing report`, error);
+      await interaction.reply({ 
+        content: 'There was a glitch in the jungle. Please contact a monkey elder directly.', 
+        ephemeral: true 
+      });
+    }
+  },
+  
+  restart: async (interaction) => {
+    if (!isStaffMember(interaction.member)) {
+      return interaction.reply({
+        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        ephemeral: true
+      });
+    }
+    
+    const reason = interaction.options.getString('reason') || 'No reason provided';
+    const confirmButton = new ButtonBuilder()
+      .setCustomId('confirm_restart')
+      .setLabel('✅ Confirm Restart')
+      .setStyle(ButtonStyle.Danger);
+    
+    const cancelButton = new ButtonBuilder()
+      .setCustomId('cancel_restart')
+      .setLabel('❌ Cancel')
+      .setStyle(ButtonStyle.Secondary);
+    
+    const actionRow = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
+    
+    const confirmEmbed = new EmbedBuilder()
+      .setTitle('⚠️ Monkey Nap Time?')
+      .setDescription(`Are you sure you want to send the monkey bot for a quick nap?\n\n**Reason:** ${reason}`)
+      .setColor('#FF9B21')
+      .setFooter({ text: 'This action will briefly disconnect the monkey bot.' })
+      .setTimestamp();
+    
+    const message = await interaction.reply({
+      embeds: [confirmEmbed],
+      components: [actionRow],
+      ephemeral: true,
+    });
+    
+    const collector = message.createMessageComponentCollector({ 
+      filter: i => i.user.id === interaction.user.id,
+      time: 30000
+    });
+    
+    collector.on('collect', async i => {
+      if (i.customId === 'confirm_restart') {
+        await i.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('🔄 Monkey Nap Initiated')
+              .setDescription(`Monkey bot is going for a quick nap, requested by <@${interaction.user.id}>.\n\n**Reason:** ${reason}\n\nThe monkey will wake up and be back online shortly.`)
+              .setColor('#FF0000')
+              .setTimestamp()
+          ],
+          components: []
+        });
+        
+        try {
+          // Log to Discord
+          const guild = interaction.guild;
+          const logChannel = guild.channels.cache.get(config.uptimeLogsChannelId);
+          
+          if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+              .setTitle('🔄 Monkey Nap Initiated')
+              .setDescription(`Bot restart has been initiated by <@${interaction.user.id}>.`)
+              .addFields([
+                { name: 'Reason', value: reason, inline: false },
+                { name: 'Time', value: new Date().toLocaleString(), inline: false }
+              ])
+              .setColor('#FF9B21')
+              .setFooter({ text: config.embedFooter })
+              .setTimestamp();
+            
+            await logChannel.send({ embeds: [logEmbed] });
+          }
+          
+          saveUserDB();
+          updateLastOnlineTime();
+          
+          // Create restart signal file
+          fs.writeFileSync(RESTART_SIGNAL_FILE, `Restart requested by ${interaction.user.id} at ${new Date().toISOString()}\nReason: ${reason}`);
+          
+          // Simple restart using process exit
+          setTimeout(() => {
+            logger.info("Restarting bot with exit code 50");
+            process.exit(50);  // Exit with code 50 for restart
+          }, 2000);
+          
+        } catch (error) {
+          logger.error(`Error during restart`, error);
+        }
+      } else if (i.customId === 'cancel_restart') {
+        await i.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('❌ Monkey Nap Cancelled')
+              .setDescription('The bot will continue swinging through the vines.')
+              .setColor('#4CAF50')
+              .setTimestamp()
+          ],
+          components: []
+        });
+      }
+    });
+  },
+  
+  stop: async (interaction) => {
+    if (!isStaffMember(interaction.member)) {
+      return interaction.reply({
+        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        ephemeral: true
+      });
+    }
+    
+    const reason = interaction.options.getString('reason') || 'No reason provided';
+    const confirmButton = new ButtonBuilder()
+      .setCustomId('confirm_stop')
+      .setLabel('✅ Confirm Stop')
+      .setStyle(ButtonStyle.Danger);
+    
+    const cancelButton = new ButtonBuilder()
+      .setCustomId('cancel_stop')
+      .setLabel('❌ Cancel')
+      .setStyle(ButtonStyle.Secondary);
+    
+    const actionRow = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
+    
+    const confirmEmbed = new EmbedBuilder()
+      .setTitle('⚠️ Monkey Hibernation?')
+      .setDescription(`Are you sure you want to send the monkey to sleep?\n\n**Reason:** ${reason}\n\n**⚠️ WARNING:** This will completely shut down the monkey bot until manually awakened.`)
+      .setColor('#FF0000')
+      .setFooter({ text: 'This action will disconnect the monkey until manually restarted.' })
+      .setTimestamp();
+    
+    const message = await interaction.reply({
+      embeds: [confirmEmbed],
+      components: [actionRow],
+      ephemeral: true,
+    });
+    
+    const collector = message.createMessageComponentCollector({ 
+      filter: i => i.user.id === interaction.user.id,
+      time: 30000
+    });
+    
+    collector.on('collect', async i => {
+      if (i.customId === 'confirm_stop') {
+        await i.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('🛑 Monkey Hibernation Initiated')
+              .setDescription(`Monkey bot is going into hibernation, requested by <@${interaction.user.id}>.\n\n**Reason:** ${reason}\n\nThe monkey will need to be manually awakened.`)
+              .setColor('#FF0000')
+              .setTimestamp()
+          ],
+          components: []
+        });
+        
+        try {
+          // Log to Discord
+          const guild = interaction.guild;
+          const logChannel = guild.channels.cache.get(config.uptimeLogsChannelId);
+          
+          if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+              .setTitle('🛑 Monkey Hibernation Initiated')
+              .setDescription(`Bot shutdown has been initiated by <@${interaction.user.id}>.`)
+              .addFields([
+                { name: 'Reason', value: reason, inline: false },
+                { name: 'Time', value: new Date().toLocaleString(), inline: false }
+              ])
+              .setColor('#FF0000')
+              .setFooter({ text: config.embedFooter })
+              .setTimestamp();
+            
+            await logChannel.send({ embeds: [logEmbed] });
+          }
+          
+          saveUserDB();
+          updateLastOnlineTime();
+          
+          // Create stop signal file
+          fs.writeFileSync(STOP_SIGNAL_FILE, `Stop requested by ${interaction.user.id} at ${new Date().toISOString()}\nReason: ${reason}`);
+          
+          // Simple stop using process exit
+          setTimeout(() => {
+            logger.info("Stopping bot with clean exit");
+            process.exit(0);  // Normal exit
+          }, 2000);
+          
+        } catch (error) {
+          logger.error(`Error during shutdown`, error);
+        }
+      } else if (i.customId === 'cancel_stop') {
+        await i.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('❌ Hibernation Cancelled')
+              .setDescription('The monkey will stay awake and continue to swing through the vines.')
+              .setColor('#4CAF50')
+              .setTimestamp()
+          ],
+          components: []
+        });
+      }
+    });
+  }
+};
+
+// Context menu handlers
+const contextMenuHandlers = {
+  // Verify Member context menu
+  verifyMember: async (interaction) => {
+    if (!isStaffMember(interaction.member)) {
+      return interaction.reply({ 
+        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        ephemeral: true
+      });
+    }
+    
+    const user = interaction.targetUser;
+    
+    try {
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      
+      if (!member) {
+        return interaction.reply({ 
+          content: `❌ Monkey <@${user.id}> is not in our jungle.`,
+          ephemeral: true
+        });
+      }
+      
+      if (userDB.verifiedUsers[user.id]) {
+        return interaction.reply({ 
+          content: `❌ Monkey <@${user.id}> already has a banana!`,
+          ephemeral: true
+        });
+      }
+      
+      const timestamp = new Date().toISOString();
+      const userData = {
+        id: user.id,
+        username: user.username,
+        discriminator: user.discriminator || '0',
+        globalName: user.globalName || user.username,
+        avatar: user.avatar,
+        email: null,
+        accessToken: null,
+        refreshToken: null,
+        verifiedAt: timestamp,
+        verificationIP: 'manual-verification',
+        bananaCount: 1,
+        tier: "banana",
+        manuallyVerifiedBy: interaction.user.id
+      };
+      
+      userDB.verifiedUsers[user.id] = userData;
+      
+      userDB.statistics.totalVerified++;
+      const today = new Date().toISOString().split('T')[0];
+      userDB.statistics.verificationsByDay[today] = 
+        (userDB.statistics.verificationsByDay[today] || 0) + 1;
+      
+      saveUserDB();
+      
+      await member.roles.add(config.verifiedRoleId);
+      
+      const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
+      if (logChannel) {
+        const embed = new EmbedBuilder()
+          .setTitle('🍌 Monkey Manually Added')
+          .setDescription(`<@${user.id}> has been manually given a banana by <@${interaction.user.id}>!`)
+          .addFields([
+            { name: 'Monkey Name', value: `${user.username}#${user.discriminator}`, inline: true },
+            { name: 'Monkey ID', value: user.id, inline: true },
+            { name: 'Added By', value: `<@${interaction.user.id}>`, inline: true }
+          ])
+          .setColor(config.embedColor)
+          .setFooter({ text: config.embedFooter })
+          .setTimestamp();
+        
+        await logChannel.send({ embeds: [embed] }).catch(() => {});
+      }
+      
+      try {
+        await member.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('🎉 Welcome to the MonkeyBytes Jungle!')
+              .setDescription(config.welcomeMessage)
+              .setColor(config.embedColor)
+              .setFooter({ text: config.embedFooter })
+          ]
+        });
+      } catch (dmError) {
+        logger.warn(`Could not send welcome DM to ${user.username}`, dmError);
+      }
+      
+      await interaction.reply({ 
+        content: `✅ Successfully given a banana to <@${user.id}> and granted jungle access!`,
+        ephemeral: true
+      });
+    } catch (error) {
+      logger.error(`Error during manual verification for ${user.id}`, error);
+      await interaction.reply({
+        content: `❌ Error giving banana: ${error.message}`,
+        ephemeral: true
+      });
+    }
+  },
+  
+  // Deauthorize Member context menu
+  deauthorizeMember: async (interaction) => {
+    if (!isStaffMember(interaction.member)) {
+      return interaction.reply({ 
+        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        ephemeral: true
+      });
+    }
+    
+    const user = interaction.targetUser;
+    
+    const modal = new ModalBuilder()
+      .setCustomId(`deauth_modal_${user.id}`)
+      .setTitle(`Take ${user.username}'s Banana`);
+
+    const reasonInput = new TextInputBuilder()
+      .setCustomId('deauth_reason')
+      .setLabel('Reason for taking their banana')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Please provide a reason for removing jungle access')
+      .setRequired(true)
+      .setMaxLength(1000);
+
+    const reasonRow = new ActionRowBuilder().addComponents(reasonInput);
+    modal.addComponents(reasonRow);
+
+    await interaction.showModal(modal);
+  },
+  
+  // View User Stats context menu
+  viewUserStats: async (interaction) => {
+    if (!isStaffMember(interaction.member)) {
+      return interaction.reply({ 
+        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        ephemeral: true
+      });
+    }
+    
+    const user = interaction.targetUser;
+    
+    try {
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      
+      if (!member) {
+        return interaction.reply({
+          content: `❌ Monkey <@${user.id}> is not in our jungle.`,
+          ephemeral: true
+        });
+      }
+      
+      const isVerified = userDB.verifiedUsers && userDB.verifiedUsers[user.id];
+      const isPending = userDB.pendingApprovals && userDB.pendingApprovals[user.id];
+      const wasDeauthed = userDB.deauthorizedUsers && userDB.deauthorizedUsers[user.id];
+      
+      const joinDate = member.joinedAt ? new Date(member.joinedAt).toLocaleString() : 'Unknown';
+      
+      const verificationDate = isVerified && userDB.verifiedUsers[user.id].verifiedAt
+        ? new Date(userDB.verifiedUsers[user.id].verifiedAt).toLocaleString()
+        : 'N/A';
+      
+      const embed = new EmbedBuilder()
+        .setTitle(`📊 Monkey Stats: ${user.username}`)
+        .setDescription(`Information about <@${user.id}> in our jungle`)
+        .addFields([
+          { name: 'Monkey ID', value: user.id, inline: true },
+          { name: 'Joined Jungle', value: joinDate, inline: true },
+          { name: 'Banana Status', value: isVerified 
+            ? '✅ Has Banana'
+            : isPending 
+                ? '⏳ Awaiting Banana'
+                : wasDeauthed 
+                    ? '❌ Banana Taken'
+                    : '❔ No Banana',
+            inline: true
+          },
+          { name: 'Banana Given', value: verificationDate, inline: true },
+          { name: 'Jungle Markings', value: member.roles.cache.size > 1 
+            ? member.roles.cache
+                .filter(role => role.id !== interaction.guild.id)
+                .map(role => `<@&${role.id}>`)
+                .join(', ')
+            : 'No markings',
+            inline: false
+          }
+        ])
+        .setColor(isVerified ? config.embedColor : wasDeauthed ? '#FF0000' : '#808080')
+        .setFooter({ text: config.embedFooter })
+        .setTimestamp();
+      
+      if (wasDeauthed) {
+        embed.addFields([
+          { name: 'Banana Removal Reason', value: wasDeauthed.deauthorizationReason || 'No reason provided' },
+          { name: 'Banana Taken By', value: wasDeauthed.deauthorizedBy ? `<@${wasDeauthed.deauthorizedBy}>` : 'Unknown' },
+          { name: 'Banana Taken On', value: wasDeauthed.deauthorizedAt ? new Date(wasDeauthed.deauthorizedAt).toLocaleString() : 'Unknown' }
+        ]);
+      }
+      
+      await interaction.reply({
+        embeds: [embed],
+        ephemeral: true
+      });
+    } catch (error) {
+      logger.error(`Error getting user stats`, error);
+      await interaction.reply({
+        content: `❌ Error retrieving monkey stats: ${error.message}`,
+        ephemeral: true
+      });
+    }
+  },
+  
+  // Mark Rule Violation context menu
+  markRuleViolation: async (interaction) => {
+    if (!isStaffMember(interaction.member)) {
+      return interaction.reply({ 
+        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        ephemeral: true
+      });
+    }
+    
+    const message = interaction.targetMessage;
+    
+    const modal = new ModalBuilder()
+      .setCustomId(`violation_modal_${message.id}`)
+      .setTitle('Mark as Jungle Rule Violation');
+      
+    const violationInput = new TextInputBuilder()
+      .setCustomId('violation_type')
+      .setLabel('Jungle Rule Violation Type')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('e.g. Monkey Business, Snake Talk, Loud Howling')
+      .setRequired(true);
+      
+    const notesInput = new TextInputBuilder()
+      .setCustomId('violation_notes')
+      .setLabel('Jungle Notes')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Any additional notes about this violation')
+      .setRequired(false);
+      
+    const violationRow = new ActionRowBuilder().addComponents(violationInput);
+    const notesRow = new ActionRowBuilder().addComponents(notesInput);
+    modal.addComponents(violationRow, notesRow);
+    
+    await interaction.showModal(modal);
+  },
+  
+  // Add to Resources context menu 
+  addToResources: async (interaction) => {
+    if (!isStaffMember(interaction.member)) {
+      return interaction.reply({ 
+        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        ephemeral: true
+      });
+    }
+    
+    const message = interaction.targetMessage;
+    
+    const modal = new ModalBuilder()
+      .setCustomId(`resource_modal_${message.id}`)
+      .setTitle('Add to Jungle Knowledge');
+      
+    const categoryInput = new TextInputBuilder()
+      .setCustomId('resource_category')
+      .setLabel('Knowledge Category')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('e.g. Banana Coding, Vine Swinging, Tree Climbing')
+      .setRequired(true);
+      
+    const descriptionInput = new TextInputBuilder()
+      .setCustomId('resource_description')
+      .setLabel('Knowledge Description')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('A brief description of this jungle knowledge')
+      .setRequired(true);
+      
+    const categoryRow = new ActionRowBuilder().addComponents(categoryInput);
+    const descriptionRow = new ActionRowBuilder().addComponents(descriptionInput);
+    modal.addComponents(categoryRow, descriptionRow);
+    
+    await interaction.showModal(modal);
+  }
+};
+
+// ==================== MODAL SUBMISSION HANDLER ====================
+async function handleModalSubmit(interaction) {
+  // Handle deauth modal
+  if (interaction.customId.startsWith('deauth_modal_')) {
+    const userId = interaction.customId.split('_')[2];
+    const reason = interaction.fields.getTextInputValue('deauth_reason');
+    
+    if (!reason || reason.trim() === '') {
+      return interaction.reply({ 
+        content: `❌ You must provide a reason for taking away this monkey's banana.`,
+        ephemeral: true
+      });
+    }
+    
+    await interaction.deferReply({ ephemeral: true });
+    
+    if (!userDB || !userDB.verifiedUsers || !userDB.verifiedUsers[userId]) {
+      return interaction.editReply({ 
+        content: `❌ Monkey <@${userId}> doesn't have a banana.`
+      });
+    }
+    
+    try {
+      const member = await interaction.guild.members.fetch(userId).catch(() => null);
+      const userData = { ...userDB.verifiedUsers[userId] };
+      
+      delete userDB.verifiedUsers[userId];
+      
+      userDB.deauthorizedUsers[userId] = {
+        ...userData,
+        deauthorizedAt: new Date().toISOString(),
+        deauthorizedBy: interaction.user.id,
+        deauthorizationReason: reason
+      };
+      
+      userDB.statistics.totalDeauths++;
+      
+      saveUserDB();
+      
+      if (member) {
+        if (member.roles.cache.has(config.verifiedRoleId)) {
+          await member.roles.remove(config.verifiedRoleId).catch(err => {
+            logger.error(`Error removing verified role from ${userId}`, err);
+          });
+        }
+        
+        try {
+          const authUrl = `${config.serverUrl}/auth`;
+          const embed = new EmbedBuilder()
+            .setTitle('🐵 MonkeyBytes Jungle Access Update')
+            .setDescription(`Your banana has been taken by a monkey elder, revoking your access to the MonkeyBytes jungle.\n\n**Reason:** ${reason}\n\nTo regain access to our coding jungle, please [click here to request a new banana](${authUrl}). After you authenticate, a monkey elder will review your request.`)
+            .setColor('#FF9B21')
+            .setFooter({ text: config.embedFooter })
+            .setTimestamp();
+          
+          await member.send({ embeds: [embed] });
+        } catch (dmError) {
+          logger.warn(`Could not send deauth DM to user`, dmError);
+        }
+      }
+      
+      const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
+      if (logChannel) {
+        const embed = new EmbedBuilder()
+          .setTitle('🍌 Banana Confiscated')
+          .setDescription(`<@${userId}>'s banana has been taken by <@${interaction.user.id}>!`)
+          .addFields(
+            { name: 'Monkey ID', value: userId, inline: true },
+            { name: 'Action By', value: `<@${interaction.user.id}>`, inline: true },
+            { name: 'Reason', value: reason, inline: false }
+          )
+          .setColor('#FF0000')
+          .setFooter({ text: config.embedFooter })
+          .setTimestamp();
+        
+        await logChannel.send({ embeds: [embed] }).catch(() => {});
+      }
+      
+      await interaction.editReply({ 
+        content: `✅ Successfully taken <@${userId}>'s banana with reason: "${reason}"`
+      });
+    } catch (error) {
+      logger.error(`Error during deauthorization for ${userId}`, error);
+      
+      await interaction.editReply({ 
+        content: `❌ Error taking banana: ${error.message}`
+      });
+    }
+  }
+  
+  // Handle rule violation modal
+  else if (interaction.customId.startsWith('violation_modal_')) {
+    const messageId = interaction.customId.split('_')[2];
+    const violationType = interaction.fields.getTextInputValue('violation_type');
+    const notes = interaction.fields.getTextInputValue('violation_notes') || 'No additional notes provided';
+    
+    if (!violationType || violationType.trim() === '') {
+      return interaction.reply({
+        content: `❌ You must provide a violation type.`,
+        ephemeral: true
+      });
+    }
+    
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+      const channel = interaction.channel;
+      const message = await channel.messages.fetch(messageId).catch(() => null);
+      
+      if (!message) {
+        return interaction.editReply({
+          content: '❌ Error: Message not found. It may have swung away.'
+        });
+      }
+      
+      const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
+      if (logChannel) {
+        const embed = new EmbedBuilder()
+          .setTitle('⚠️ Jungle Rules Violation')
+          .setDescription(`A message has been flagged as breaking jungle rules by <@${interaction.user.id}>`)
+          .addFields(
+            { name: 'Monkey', value: `<@${message.author.id}>`, inline: true },
+            { name: 'Location', value: `<#${channel.id}>`, inline: true },
+            { name: 'Violation Type', value: violationType, inline: true },
+            { name: 'Notes', value: notes, inline: false },
+            { name: 'Message Content', value: message.content || '(No text content - may contain attachments/embeds)', inline: false },
+            { name: 'Message Link', value: `[Jump to Message](${message.url})`, inline: false }
+          )
+          .setColor('#FF0000')
+          .setFooter({ text: config.embedFooter })
+          .setTimestamp();
+        
+        await logChannel.send({ embeds: [embed] });
+      }
+      
+      await interaction.editReply({
+        content: `✅ Message marked as "${violationType}" jungle rule violation. Monkey guards have been notified.`
+      });
+      
+    } catch (error) {
+      logger.error(`Error processing rule violation`, error);
+      
+      await interaction.editReply({
+        content: `❌ Error processing jungle violation: ${error.message}`
+      });
+    }
+  }
+  
+  // Handle resource modal
+  else if (interaction.customId.startsWith('resource_modal_')) {
+    const messageId = interaction.customId.split('_')[2];
+    const category = interaction.fields.getTextInputValue('resource_category');
+    const description = interaction.fields.getTextInputValue('resource_description');
+    
+    if (!category || category.trim() === '' || !description || description.trim() === '') {
+      return interaction.reply({
+        content: `❌ You must provide both a category and description for jungle knowledge.`,
+        ephemeral: true
+      });
+    }
+    
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+      const channel = interaction.channel;
+      const message = await channel.messages.fetch(messageId).catch(() => null);
+      
+      if (!message) {
+        return interaction.editReply({
+          content: '❌ Error: Message not found. It may have swung away.'
+        });
+      }
+      
+      const resourcesChannel = interaction.guild.channels.cache.get(config.resourcesChannelId);
+      if (!resourcesChannel) {
+        return interaction.editReply({
+          content: '❌ Banana archive not found. Please set up a knowledge storage area first.'
+        });
+      }
+      
+      const embed = new EmbedBuilder()
+        .setTitle(`${category} Jungle Resource`)
+        .setDescription(description)
+        .addFields(
+          { name: 'Submitted By', value: `<@${message.author.id}>`, inline: true },
+          { name: 'Added By', value: `<@${interaction.user.id}>`, inline: true },
+          { name: 'Original Location', value: `[Jump to Original](${message.url})`, inline: false },
+          { name: 'Resource Content', value: message.content || '(No text content - may contain attachments/embeds)' }
+        )
+        .setColor(config.embedColor)
+        .setFooter({ text: config.embedFooter })
+        .setTimestamp();
+      
+      const resourceMsg = await resourcesChannel.send({ embeds: [embed] });
+      
+      resourceEntries[resourceMsg.id] = {
+        messageId: message.id,
+        authorId: message.author.id,
+        addedById: interaction.user.id,
+        category,
+        description,
+        timestamp: new Date().toISOString()
+      };
+      
+      const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
+      if (logChannel) {
+        const logEmbed = new EmbedBuilder()
+          .setTitle('📚 Jungle Knowledge Added')
+          .setDescription(`A new resource has been added to the archives by <@${interaction.user.id}>`)
+          .addFields(
+            { name: 'Category', value: category, inline: true },
+            { name: 'Added By', value: `<@${interaction.user.id}>`, inline: true },
+            { name: 'Original Author', value: `<@${message.author.id}>`, inline: true },
+            { name: 'Resource Link', value: `[Jump to Resource](${resourceMsg.url})`, inline: false }
+          )
+          .setColor(config.embedColor)
+          .setFooter({ text: config.embedFooter })
+          .setTimestamp();
+        
+        await logChannel.send({ embeds: [logEmbed] });
+      }
+      
+      await interaction.editReply({
+        content: `✅ Knowledge successfully added to the banana archives under category "${category}".`
+      });
+      
+    } catch (error) {
+      logger.error(`Error adding to resources`, error);
+      
+      await interaction.editReply({
+        content: `❌ Error adding to jungle knowledge: ${error.message}`
+      });
+    }
+  }
+}
+
+// ==================== DOWNTIME TRACKING ====================
+function ensureDowntimeDirectory() {
+  try {
+    const dbDir = path.dirname(downtimeFilePath);
+    if (dbDir !== '.' && !fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+    return true;
+  } catch (error) {
+    logger.error(`Failed to create downtime tracking directory`, error);
+    return false;
+  }
+}
+
+function loadDowntimeData() {
+  try {
+    ensureDowntimeDirectory();
+    
+    // Initialize with default data
+    const defaultData = {
+      lastOnline: new Date().toISOString(),
+      startTime: new Date().toISOString(),
+      downtimeEvents: [],
+      totalDowntime: 0
+    };
+    
+    if (fs.existsSync(downtimeFilePath)) {
+      try {
+        const data = fs.readFileSync(downtimeFilePath, 'utf8');
+        if (!data || data.trim() === '') {
+          fs.writeFileSync(downtimeFilePath, JSON.stringify(defaultData, null, 2));
+          return defaultData;
+        }
+        
+        const parsedData = JSON.parse(data);
+        if (!parsedData.lastOnline || !parsedData.startTime || !parsedData.downtimeEvents) {
+          fs.writeFileSync(downtimeFilePath, JSON.stringify(defaultData, null, 2));
+          return defaultData;
+        }
+        
+        return parsedData;
+      } catch (parseError) {
+        fs.writeFileSync(downtimeFilePath, JSON.stringify(defaultData, null, 2));
+        return defaultData;
+      }
+    } else {
+      fs.writeFileSync(downtimeFilePath, JSON.stringify(defaultData, null, 2));
+      return defaultData;
+    }
+  } catch (error) {
+    logger.error(`Error in loadDowntimeData: ${error.message}`, error);
+    return {
+      lastOnline: new Date().toISOString(),
+      startTime: new Date().toISOString(),
+      downtimeEvents: [],
+      totalDowntime: 0
+    };
+  }
+}
+
+function saveDowntimeData(data) {
+  try {
+    ensureDowntimeDirectory();
+    fs.writeFileSync(downtimeFilePath, JSON.stringify(data, null, 2));
+    return true;
+  } catch (error) {
+    logger.error(`Error saving downtime data: ${error.message}`, error);
+    return false;
+  }
+}
+
+function updateLastOnlineTime() {
+  try {
+    const downtimeData = loadDowntimeData();
+    downtimeData.lastOnline = new Date().toISOString();
+    saveDowntimeData(downtimeData);
+    return true;
+  } catch (error) {
+    logger.error(`Error updating last online time: ${error.message}`, error);
+    return false;
+  }
+}
+
+// Check for downtime that occurred while the bot was offline
+function checkForDowntime() {
+  try {
+    const downtimeData = loadDowntimeData();
+    
+    let lastOnline;
+    try {
+      lastOnline = new Date(downtimeData.lastOnline);
+      if (isNaN(lastOnline.getTime())) {
+        throw new Error("Invalid date");
+      }
+    } catch (dateError) {
+      logger.error(`Invalid last online date: ${dateError.message}`, dateError);
+      lastOnline = new Date();
+      downtimeData.lastOnline = lastOnline.toISOString();
+      saveDowntimeData(downtimeData);
+      return { detected: false };
+    }
+    
+    const currentTime = new Date();
+    const diffMilliseconds = Math.max(0, currentTime - lastOnline);
+    const diffSeconds = Math.floor(diffMilliseconds / 1000);
+    
+    // If the difference is more than 2 minutes, count it as downtime
+    if (diffSeconds > 120) {
+      const downtimeMinutes = Math.floor(diffSeconds / 60);
+      
+      // Add the downtime event
+      downtimeData.downtimeEvents.push({
+        start: lastOnline.toISOString(),
+        end: currentTime.toISOString(),
+        duration: downtimeMinutes,
+        detected: new Date().toISOString() // When it was detected
+      });
+      
+      // Ensure totalDowntime is a number
+      if (typeof downtimeData.totalDowntime !== 'number') {
+        downtimeData.totalDowntime = 0;
+      }
+      
+      // Update total downtime
+      downtimeData.totalDowntime += downtimeMinutes;
+      
+      // Update last online time
+      downtimeData.lastOnline = currentTime.toISOString();
+      
+      // Save the data
+      saveDowntimeData(downtimeData);
+      
+      logger.warn(`Downtime of ${downtimeMinutes} minutes detected`);
+      
+      return {
+        detected: true,
+        duration: downtimeMinutes,
+        start: lastOnline,
+        end: currentTime
+      };
+    } else {
+      // Update last online time
+      downtimeData.lastOnline = currentTime.toISOString();
+      saveDowntimeData(downtimeData);
+      return { detected: false };
+    }
+  } catch (error) {
+    logger.error(`Error checking for downtime: ${error.message}`, error);
+    try {
+      const downtimeData = loadDowntimeData();
+      downtimeData.lastOnline = new Date().toISOString();
+      saveDowntimeData(downtimeData);
+    } catch (updateError) {
+      logger.error(`Error updating last online time after downtime check error`, updateError);
+    }
+    return { detected: false, error: true };
+  }
+}
+
+// Calculate uptime percentage based on recorded downtime
+function calculateUptimePercentage() {
+  try {
+    const downtimeData = loadDowntimeData();
+    
+    let startTime;
+    try {
+      startTime = new Date(downtimeData.startTime);
+      if (isNaN(startTime.getTime())) {
+        throw new Error("Invalid date");
+      }
+    } catch (dateError) {
+      logger.error(`Invalid start time: ${dateError.message}`, dateError);
+      startTime = new Date();
+      startTime.setDate(startTime.getDate() - 7); // Default to 7 days ago
+      downtimeData.startTime = startTime.toISOString();
+      saveDowntimeData(downtimeData);
+    }
+    
+    const currentTime = new Date();
+    const totalMinutes = Math.max(1, Math.floor((currentTime - startTime) / 1000 / 60));
+    
+    // Ensure totalDowntime is a number
+    let totalDowntime = 0;
+    if (typeof downtimeData.totalDowntime === 'number') {
+      totalDowntime = downtimeData.totalDowntime;
+    } else {
+      logger.warn('totalDowntime is not a number, defaulting to 0');
+      downtimeData.totalDowntime = 0;
+      saveDowntimeData(downtimeData);
+    }
+    
+    // Calculate uptime percentage
+    const uptimePercentage = 100 - ((totalDowntime / totalMinutes) * 100);
+    
+    // Ensure the percentage is between 0 and 100
+    return Math.max(0, Math.min(100, uptimePercentage)).toFixed(2);
+  } catch (error) {
+    logger.error(`Error calculating uptime percentage: ${error.message}`, error);
+    return "99.99"; // Default to high uptime if calculation fails
+  }
+}
+
+async function sendUptimeUpdate() {
+  try {
+    const uptime = Math.floor((new Date() - botStartTime) / 1000);
+    const days = Math.floor(uptime / 86400);
+    const hours = Math.floor((uptime % 86400) / 3600);
+    const minutes = Math.floor((uptime % 3600) / 60);
+    
+    const uptimeString = `${days}d ${hours}h ${minutes}m`;
+    const memoryUsage = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+    const uptimePercentage = calculateUptimePercentage();
+    
+    updateLastOnlineTime();
+    
+    const guild = client.guilds.cache.get(config.guildId);
+    if (!guild) return;
+    
+    const uptimeLogsChannel = guild.channels.cache.get(config.uptimeLogsChannelId);
+    if (!uptimeLogsChannel) return;
+    
+    const uptimeEmbed = new EmbedBuilder()
+      .setTitle('🕒 Jungle Bot Status')
+      .addFields([
+        { name: 'Bot Status', value: 'Swinging through vines', inline: true },
+        { name: 'Time in Jungle', value: uptimeString, inline: true },
+        { name: 'Banana Storage', value: `${memoryUsage} MB`, inline: true },
+        { name: 'Jungle Connection', value: `${client.ws.ping}ms`, inline: true },
+        { name: 'Jungle Time', value: `${uptimePercentage}%`, inline: true }
+      ])
+      .setColor(config.embedColor)
+      .setFooter({ text: config.embedFooter })
+      .setTimestamp();
+      
+    await uptimeLogsChannel.send({ embeds: [uptimeEmbed] });
+  } catch (error) {
+    logger.error(`Failed to send uptime update`, error);
+  }
+}
+
 async function sendHeartbeat() {
   try {
-    // Get accurate counts
     const currentVerifiedCount = Object.keys(userDB.verifiedUsers || {}).length;
     const currentDeauthCount = Object.keys(userDB.deauthorizedUsers || {}).length;
     const pendingCount = Object.keys(userDB.pendingApprovals || {}).length;
     
-    // Simple heartbeat with only essential information
-    const heartbeatEmbed = {
-      title: "🍌 MonkeyBytes Auth Status",
-      color: 0x3eff06,
-      timestamp: new Date().toISOString(),
-      fields: [
+    const heartbeatEmbed = new EmbedBuilder()
+      .setTitle("🍌 MonkeyBytes Jungle Status")
+      .setColor(config.embedColor)
+      .addFields([
         {
-          name: "Bot Status",
-          value: `Online | ${client.user.tag}`,
+          name: "Monkey Bot Status",
+          value: `Swinging through vines | ${client.user.tag}`,
           inline: true
         },
         {
-          name: "Memory",
+          name: "Banana Storage",
           value: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
           inline: true
         },
         {
-          name: "Verified Users",
+          name: "Monkeys with Bananas",
           value: currentVerifiedCount.toString(),
           inline: true
         },
         {
-          name: "Deauthorized Users",
+          name: "Bananaless Monkeys",
           value: currentDeauthCount.toString(),
           inline: true
         },
         {
-          name: "Pending Approvals",
+          name: "Pending Banana Requests",
           value: pendingCount.toString(),
           inline: true
         },
         {
-          name: "Total Stats",
-          value: `✅ ${userDB.statistics.totalVerified} verified | ❌ ${userDB.statistics.totalDeauths} deauthed`,
+          name: "Jungle Stats",
+          value: `✅ ${userDB.statistics.totalVerified} bananas given | ❌ ${userDB.statistics.totalDeauths} bananas taken`,
           inline: false
         }
-      ],
-      footer: {
-        text: config.embedFooter
+      ])
+      .setFooter({ text: config.embedFooter })
+      .setTimestamp();
+    
+    const guild = client.guilds.cache.get(config.guildId);
+    if (guild) {
+      const heartbeatChannel = guild.channels.cache.get(config.heartbeatChannelId);
+      if (heartbeatChannel) {
+        await heartbeatChannel.send({ embeds: [heartbeatEmbed] });
       }
-    };
+    }
     
-    // Send to webhook
-    await axios({
-      method: 'post',
-      url: config.heartbeatWebhook,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      data: {
-        username: "MonkeyBytes Auth",
-        embeds: [heartbeatEmbed]
-      },
-      timeout: 5000
-    });
-    
-    log(`Heartbeat sent`, 'JOB');
+    updateLastOnlineTime();
   } catch (error) {
-    log(`Failed to send heartbeat`, 'WARN', error);
+    logger.error(`Failed to send heartbeat`, error);
   }
 }
 
-// ==================== BOT EVENTS ====================
+// ==================== DISCORD BOT EVENTS ====================
 client.once('ready', async () => {
-  log(`Bot logged in as ${client.user.tag}`, 'STARTUP');
+  logger.startup(`Bot logged in as ${client.user.tag}`);
+  
+  // Check for signal files on startup
+  try {
+    if (fs.existsSync(RESTART_SIGNAL_FILE)) {
+      fs.unlinkSync(RESTART_SIGNAL_FILE);
+    }
+    if (fs.existsSync(STOP_SIGNAL_FILE)) {
+      fs.unlinkSync(STOP_SIGNAL_FILE);
+    }
+  } catch (error) {
+    logger.error("Error checking signal files", error);
+  }
   
   // Set bot presence
-  setBotPresence();
+  setRotatingPresence();
 
-  // Setup verification system
   const guild = client.guilds.cache.get(config.guildId);
   if (guild) {
-    await setupVerificationSystem(guild);
     await registerCommands(guild);
-    log(`Verification system ready in guild: ${guild.name}`, 'COMPLETE');
     
-    // Send verification message to the additional specified channel
-    if (config.additionalVerificationChannelId) {
-      await checkAndSendVerificationToChannel(config.additionalVerificationChannelId);
+    // Check for downtime that occurred while the bot was offline
+    const downtimeCheck = checkForDowntime();
+    
+    const uptimeLogsChannel = guild.channels.cache.get(config.uptimeLogsChannelId);
+    if (uptimeLogsChannel) {
+      const fields = [
+        { name: 'Startup Time', value: new Date().toLocaleString(), inline: true },
+        { name: 'Version', value: '1.3.0', inline: true },
+        { name: 'Node Version', value: process.version, inline: true },
+        { name: 'Memory', value: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB`, inline: true },
+        { name: 'Platform', value: process.platform, inline: true }
+      ];
+      
+      if (downtimeCheck.detected) {
+        fields.push(
+          { name: 'Nap Duration', value: `${downtimeCheck.duration} minutes`, inline: true },
+          { name: 'Nap Started', value: downtimeCheck.start.toLocaleString(), inline: true },
+          { name: 'Woke Up', value: new Date().toLocaleString(), inline: true }
+        );
+      }
+      
+      const uptimePercentage = calculateUptimePercentage();
+      fields.push({ name: 'Overall Uptime', value: `${uptimePercentage}%`, inline: true });
+      
+      const uptimeEmbed = new EmbedBuilder()
+        .setTitle(downtimeCheck.detected ? '🔄 Monkey Awake After Nap' : '🍌 Monkey Bot Activated')
+        .setDescription(downtimeCheck.detected 
+          ? `MonkeyBytes Jungle Bot is now back online after taking a ${downtimeCheck.duration} minute nap.`
+          : `MonkeyBytes Jungle Bot is now swinging through the vines and ready to help!`)
+        .addFields(fields)
+        .setColor(downtimeCheck.detected ? '#FFA500' : '#00FF00')
+        .setFooter({ text: config.embedFooter })
+        .setTimestamp();
+        
+      await uptimeLogsChannel.send({ embeds: [uptimeEmbed] });
     }
     
-    // Send initial heartbeat on startup
+    // Start heartbeats and checks
     sendHeartbeat();
-    
-    // Start heartbeat interval
+    sendUptimeUpdate();
     setInterval(sendHeartbeat, config.heartbeatInterval);
-    
-    // Set a 30-second interval to check for pending approvals
+    setInterval(sendUptimeUpdate, 300000); // Send uptime logs every 5 minutes
     setInterval(async () => {
-      try {
-        // Skip if there are no pending approvals
-        if (!userDB.pendingApprovals || Object.keys(userDB.pendingApprovals || {}).length === 0) {
-          return;
-        }
-        
-        const pendingCount = await checkPendingApprovals();
-        if (pendingCount > 0) {
-          log(`Found ${pendingCount} pending approvals`, 'JOB');
-        }
-      } catch (error) {
-        log(`Error in automatic pending approval check`, 'ERROR', error);
-      }
-    }, 30000); // 30 seconds
+      if (!userDB.pendingApprovals || Object.keys(userDB.pendingApprovals).length === 0) return;
+      await checkPendingApprovals();
+    }, 30000);
+    
+    // Periodically update the "last online" time
+    // This won't detect downtime while running (that's impossible),
+    // but will help track when the bot was last alive for future startup checks
+    setInterval(() => {
+      updateLastOnlineTime();
+    }, 300000); // Update every 5 minutes
   } else {
-    log(`Guild with ID ${config.guildId} not found`, 'ERROR');
+    logger.error(`Guild with ID ${config.guildId} not found`);
   }
 });
 
-// Handle button interactions
 client.on('interactionCreate', async interaction => {
   try {
-    // Verify button
+    // Handle button interactions
     if (interaction.isButton()) {
       if (interaction.customId === 'verify_button') {
-        // Check if user is already verified
         if (userDB.verifiedUsers && userDB.verifiedUsers[interaction.user.id]) {
           return interaction.reply({
-            content: '✅ You are already verified!',
-            flags: MessageFlags.Ephemeral
+            content: '✅ You already have your banana! You\'re fully verified in the MonkeyBytes jungle.',
+            ephemeral: true
           });
         }
         
         return sendVerificationUrl(interaction);
       }
       
-      // Handle approval buttons
+      // Skip restart/stop button handlers as they use collectors
+      if (interaction.customId.startsWith('confirm_') || interaction.customId.startsWith('cancel_')) {
+        return;
+      }
+      
+      // Handle approval/denial buttons
       if (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('deny_')) {
-        // Permission check
         if (!isStaffMember(interaction.member)) {
           return interaction.reply({ 
-            content: 'You need staff permissions to use these buttons.',
-            flags: MessageFlags.Ephemeral
+            content: 'Only monkey elders (staff members) can use this command! 🍌',
+            ephemeral: true
           });
         }
         
         const approved = interaction.customId.startsWith('approve_');
         const userId = interaction.customId.split('_')[1];
         
-        // Process the verification
         await interaction.deferReply({ ephemeral: true });
         
         const success = await processVerificationApproval(userId, approved, interaction.user.id);
         
         if (success) {
-          // Add a reaction to the message to show it's been processed
           try {
             await interaction.message.react(approved ? '✅' : '❌');
           } catch (reactError) {
-            log(`Error adding reaction to message`, 'WARN', reactError);
+            logger.warn(`Error adding reaction to message`, reactError);
           }
           
-          // Reply to the interaction
           await interaction.editReply({
-            content: `✅ Successfully ${approved ? 'approved' : 'denied'} verification for <@${userId}>.`,
+            content: `✅ Successfully ${approved ? 'granted a banana to' : 'denied jungle access for'} <@${userId}>.`,
           });
           
-          // Edit the original message to show it's been processed and remove buttons
           const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-            .setTitle(approved ? '✅ Verification Approved' : '❌ Verification Denied')
-            .setDescription(`<@${userId}> verification has been ${approved ? 'approved' : 'denied'} by <@${interaction.user.id}>.`)
+            .setTitle(approved ? '✅ Banana Granted' : '❌ Banana Denied')
+            .setDescription(`<@${userId}>'s banana request has been ${approved ? 'approved' : 'denied'} by <@${interaction.user.id}>.`)
             .setColor(approved ? config.embedColor : '#FF0000')
             .setTimestamp();
           
-          // Update message without any components (buttons)
           await interaction.message.edit({ 
             embeds: [updatedEmbed],
-            components: [] // Remove all buttons
-          });
+            components: []
+          }).catch(() => {});
         } else {
           await interaction.editReply({
-            content: `❌ Error processing ${approved ? 'approval' : 'denial'}. The user might no longer be pending.`,
+            content: `❌ Error processing ${approved ? 'approval' : 'denial'}. Monkey might no longer be waiting.`,
           });
         }
         
@@ -1370,629 +1970,159 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
       const { commandName } = interaction;
       
-      // Public verify command
-      if (commandName === 'verify') {
-        // Check if user is already verified
+      // Check if command exists in our handlers
+      if (commandHandlers[commandName]) {
+        await commandHandlers[commandName](interaction);
+      } else if (commandName === 'verify') {
         if (userDB.verifiedUsers && userDB.verifiedUsers[interaction.user.id]) {
           return interaction.reply({
-            content: '✅ You are already verified!',
-            flags: MessageFlags.Ephemeral
+            content: '✅ You already have your banana! You\'re fully verified in the MonkeyBytes jungle.',
+            ephemeral: true
           });
         }
-        
         return sendVerificationUrl(interaction);
-      }
-      
-      // Manual verify command
-      else if (commandName === 'manualverify') {
-        // Permission check
-        if (!isStaffMember(interaction.member)) {
-          return interaction.reply({ 
-            content: 'You need staff permissions to use this command.',
-            flags: MessageFlags.Ephemeral
-          });
-        }
-        
-        const user = interaction.options.getUser('user');
-        
-        try {
-          const member = await interaction.guild.members.fetch(user.id).catch(err => {
-            log(`Error fetching member for manual verification: ${user.id}`, 'ERROR', err);
-            return null;
-          });
-          
-          if (!member) {
-            return interaction.reply({ 
-              content: `❌ User <@${user.id}> is not a member of this server.`,
-              flags: MessageFlags.Ephemeral
-            });
-          }
-          
-          // Already verified check
-          if (userDB.verifiedUsers[user.id]) {
-            return interaction.reply({ 
-              content: `❌ User <@${user.id}> is already verified.`,
-              flags: MessageFlags.Ephemeral
-            });
-          }
-          
-          // Create user data for manual verification
-          const timestamp = new Date().toISOString();
-          const userData = {
-            id: user.id,
-            username: user.username,
-            discriminator: user.discriminator || '0',
-            globalName: user.globalName || user.username,
-            avatar: user.avatar,
-            email: null,
-            accessToken: null,
-            refreshToken: null,
-            verifiedAt: timestamp,
-            verificationIP: 'manual-verification',
-            bananaCount: 1,
-            tier: "banana",
-            manuallyVerifiedBy: interaction.user.id
-          };
-          
-          // Add user to verified database
-          userDB.verifiedUsers[user.id] = userData;
-          
-          // Update statistics
-          userDB.statistics.totalVerified++;
-          const today = new Date().toISOString().split('T')[0];
-          userDB.statistics.verificationsByDay[today] = 
-            (userDB.statistics.verificationsByDay[today] || 0) + 1;
-          
-          saveUserDB();
-          
-          // Add the verified role
-          await member.roles.add(config.verifiedRoleId).catch(err => {
-            log(`Error adding verified role to ${user.id}`, 'ERROR', err);
-            throw new Error(`Could not add verified role: ${err.message}`);
-          });
-          
-          // Log the verification
-          const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
-          if (logChannel) {
-            const embed = new EmbedBuilder()
-              .setTitle('🍌 User Manually Verified')
-              .setDescription(`<@${user.id}> has been manually verified by <@${interaction.user.id}>!`)
-              .addFields([
-                { name: 'Username', value: `${user.username}#${user.discriminator}`, inline: true },
-                { name: 'User ID', value: user.id, inline: true },
-                { name: 'Verified By', value: `<@${interaction.user.id}>`, inline: true }
-              ])
-              .setColor(config.embedColor)
-              .setFooter({ text: config.embedFooter })
-              .setTimestamp();
-            
-            await logChannel.send({ embeds: [embed] }).catch(err => {
-              log(`Error sending log message for manual verification`, 'WARN', err);
-            });
-          }
-          
-          // Send welcome message to the user
-          try {
-            await member.send({
-              embeds: [
-                new EmbedBuilder()
-                  .setTitle('🎉 Welcome to MonkeyBytes!')
-                  .setDescription(config.welcomeMessage)
-                  .setColor(config.embedColor)
-                  .setFooter({ text: config.embedFooter })
-              ]
-            });
-            log(`Sent welcome DM to ${user.username}`, 'SUCCESS');
-          } catch (dmError) {
-            log(`Could not send welcome DM to ${user.username}`, 'WARN', dmError);
-            
-            // Log to the log channel that DM failed
-            if (config.logChannelId) {
-              const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
-              if (logChannel) {
-                await logChannel.send({
-                  content: `⚠️ NOTE: Could not send welcome DM to <@${user.id}>. They may have DMs disabled.`,
-                  allowedMentions: { users: [] } // Prevent pinging the user
-                }).catch(err => {
-                  log(`Error logging DM failure`, 'WARN', err);
-                });
-              }
-            }
-          }
-          
-          await interaction.reply({ 
-            content: `✅ Successfully verified <@${user.id}> and assigned the verified role.`,
-            flags: MessageFlags.Ephemeral
-          });
-        } catch (error) {
-          log(`Error during manual verification for ${user.id}`, 'ERROR', error);
-          await interaction.reply({
-            content: `❌ Error verifying user: ${error.message}`,
-            flags: MessageFlags.Ephemeral
-          });
-        }
-      }
-      
-      // Deauth command
-      else if (commandName === 'deauth') {
-        // Permission check
-        if (!isStaffMember(interaction.member)) {
-          return interaction.reply({ 
-            content: 'You need staff permissions to use this command.',
-            flags: MessageFlags.Ephemeral
-          });
-        }
-        
-        const user = interaction.options.getUser('user');
-        const reason = interaction.options.getString('reason') || 'No reason provided';
-        
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        
-        // Check if user is verified
-        if (!userDB || !userDB.verifiedUsers || !userDB.verifiedUsers[user.id]) {
-          return interaction.editReply({ 
-            content: `❌ User <@${user.id}> is not verified.`
-          });
-        }
-        
-        try {
-          // Get the member object
-          const member = await interaction.guild.members.fetch(user.id).catch(err => {
-            log(`Error fetching member for deauth: ${user.id}`, 'ERROR', err);
-            return null;
-          });
-          
-          // Remove user from verified database
-          delete userDB.verifiedUsers[user.id];
-          
-          // Add to deauthorized users list
-          userDB.deauthorizedUsers[user.id] = {
-            ...userDB.verifiedUsers[user.id],
-            deauthorizedAt: new Date().toISOString(),
-            deauthorizedBy: interaction.user.id,
-            deauthorizationReason: reason
-          };
-          
-          // Update statistics
-          userDB.statistics.totalDeauths++;
-          
-          saveUserDB();
-          
-          // If the member is still in the server, remove their role and send notification
-          if (member) {
-            // Remove the verified role if they have it
-            if (member.roles.cache.has(config.verifiedRoleId)) {
-              await member.roles.remove(config.verifiedRoleId).catch(err => {
-                log(`Error removing verified role from ${user.id}`, 'ERROR', err);
-                // Continue even if role removal fails - we've already removed from DB
-              });
-            }
-            
-            // Try to send DM to user with verification link
-            let dmSuccess = false;
-            try {
-              const authUrl = `${config.serverUrl}/auth`;
-              const embed = new EmbedBuilder()
-                .setTitle('🐵 MonkeyBytes Verification Status Update')
-                .setDescription(`Your verification access to the MonkeyBytes server has been revoked by a staff member.\n\n**Reason:** ${reason}\n\nTo regain access to our coding jungle, please [click here to verify again](${authUrl}). After you authenticate, a staff member will review your request.\n\nIf you have any questions about this decision, please contact a server administrator.`)
-                .setColor('#FF9B21') // Orange for warnings
-                .setFooter({ text: config.embedFooter })
-                .setTimestamp();
-              
-              await user.send({ embeds: [embed] });
-              dmSuccess = true;
-              log(`Sent deauth DM to ${user.username}`, 'INFO');
-            } catch (dmError) {
-              log(`Could not send deauth DM to ${user.username}`, 'WARN', dmError);
-              dmSuccess = false;
-            }
-            
-            // If DM failed, log to the log channel
-            if (!dmSuccess && config.logChannelId) {
-              const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
-              if (logChannel) {
-                await logChannel.send({
-                  content: `⚠️ NOTE: Could not send deauthorization notification DM to <@${user.id}>. They may have DMs disabled.`,
-                  allowedMentions: { users: [] } // Prevent pinging the user
-                }).catch(err => {
-                  log(`Error logging DM failure`, 'WARN', err);
-                });
-              }
-            }
-          }
-          
-          // Log the deauthorization
-          const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
-          if (logChannel) {
-            const embed = new EmbedBuilder()
-              .setTitle('🍌 User Deauthorized')
-              .setDescription(`<@${user.id}> has been deauthorized by <@${interaction.user.id}>!`)
-              .addFields(
-                { name: 'Username', value: `${user.username}#${user.discriminator || '0'}`, inline: true },
-                { name: 'User ID', value: user.id, inline: true },
-                { name: 'Deauthorized By', value: `<@${interaction.user.id}>`, inline: true },
-                { name: 'Reason', value: reason, inline: false }
-              )
-              .setColor('#FF0000')
-              .setFooter({ text: config.embedFooter })
-              .setTimestamp();
-            
-            await logChannel.send({ embeds: [embed] }).catch(err => {
-              log(`Error sending log message for deauth command`, 'WARN', err);
-            });
-          }
-          
-          await interaction.editReply({ 
-            content: `✅ Successfully deauthorized <@${user.id}>. ${member ? "They have been sent a reauthorization link." : "User is no longer in the server but their verification data has been removed."}`
-          });
-        } catch (error) {
-          log(`Error during deauthorization for ${user.id}`, 'ERROR', error);
-          await interaction.editReply({ 
-            content: `❌ Error deauthorizing user: ${error.message}`
-          });
-        }
-      }
-      
-      // Stats command
-      else if (commandName === 'stats') {
-        // Permission check
-        if (!isStaffMember(interaction.member)) {
-          return interaction.reply({ 
-            content: 'You need staff permissions to use this command.',
-            flags: MessageFlags.Ephemeral
-          });
-        }
-        
-        const stats = userDB.statistics;
-        // Ensure pendingApprovals exists
-        if (!userDB.pendingApprovals) {
-          userDB.pendingApprovals = {};
-          saveUserDB();
-        }
-        const pendingCount = Object.keys(userDB.pendingApprovals).length;
-        const deauthCount = Object.keys(userDB.deauthorizedUsers || {}).length;
-        
-        const embed = new EmbedBuilder()
-          .setTitle('🍌 MonkeyBytes Verification Stats')
-          .addFields(
-            { name: 'Currently Verified', value: Object.keys(userDB.verifiedUsers).length.toString(), inline: true },
-            { name: 'Total Verifications', value: stats.totalVerified.toString(), inline: true },
-            { name: 'Deauthorized Users', value: deauthCount.toString(), inline: true },
-            { name: 'Pending Approvals', value: pendingCount.toString(), inline: true },
-            { name: 'Failed Attempts', value: stats.failedAttempts.toString(), inline: true }
-          )
-          .setColor(config.embedColor)
-          .setFooter({ text: config.embedFooter })
-          .setTimestamp();
-        
-        // Add today's verifications
-        const today = new Date().toISOString().split('T')[0];
-        const todayVerifications = stats.verificationsByDay[today] || 0;
-        embed.addFields(
-          { name: 'Verifications Today', value: todayVerifications.toString() }
-        );
-        
-        // Create a button to trigger manual check for pending approvals
-        const checkButton = new ButtonBuilder()
-          .setCustomId('check_pending_approvals')
-          .setLabel('Check Pending Approvals')
-          .setStyle(ButtonStyle.Primary);
-        
-        const row = new ActionRowBuilder().addComponents(checkButton);
-        
-        await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
-      }
-      
-      // Setup command
-      else if (commandName === 'setup') {
-        // Permission check
-        if (!isStaffMember(interaction.member)) {
-          return interaction.reply({ 
-            content: 'You need staff permissions to use this command.',
-            flags: MessageFlags.Ephemeral
-          });
-        }
-        
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        
-        const guild = interaction.guild;
-        const channels = await setupVerificationSystem(guild);
-        
-        if (channels) {
-          await interaction.editReply({ 
-            content: `✅ Setup complete! Verification channel: <#${channels.verificationChannel.id}>, Log channel: <#${channels.logChannel.id}>, Approval channel: <#${channels.approvalChannel.id}>`
-          });
-        } else {
-          await interaction.editReply({ 
-            content: `❌ Error setting up verification system. Check console logs.`
-          });
-        }
-      }
-      
-      // Pending approvals command
-      else if (commandName === 'pendingapprovals') {
-        // Permission check
-        if (!isStaffMember(interaction.member)) {
-          return interaction.reply({ 
-            content: 'You need staff permissions to use this command.',
-            flags: MessageFlags.Ephemeral
-          });
-        }
-        
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        
-        // Ensure pendingApprovals exists
-        if (!userDB.pendingApprovals) {
-          userDB.pendingApprovals = {};
-          saveUserDB();
-        }
-        
-        const pendingCount = Object.keys(userDB.pendingApprovals).length;
-        
-        if (pendingCount === 0) {
-          return interaction.editReply({
-            content: '✅ There are no pending verification approvals at this time.'
-          });
-        }
-        
-        // Create embed for pending approvals
-        const embed = new EmbedBuilder()
-          .setTitle('🍌 Pending Verification Approvals')
-          .setDescription(`There are **${pendingCount}** pending verification requests.`)
-          .setColor(config.embedColor)
-          .setFooter({ text: config.embedFooter })
-          .setTimestamp();
-        
-        // Add fields for each pending approval (up to 10)
-        let count = 0;
-        for (const [userId, userData] of Object.entries(userDB.pendingApprovals)) {
-          if (count >= 10) break;
-          if (!userData) continue; // Skip invalid entries
-          
-          const created = new Date(userData.verifiedAt || Date.now()).toLocaleString();
-          embed.addFields([
-            { 
-              name: `${userData.username || 'Unknown'}#${userData.discriminator || '0'}`,
-              value: `ID: ${userId}\nRequested: ${created}`,
-              inline: true
-            }
-          ]);
-          
-          count++;
-        }
-        
-        // Create a button to send DM notifications
-        const notifyButton = new ButtonBuilder()
-          .setCustomId('check_pending_approvals')
-          .setLabel('Send Channel Notifications')
-          .setStyle(ButtonStyle.Primary);
-        
-        const row = new ActionRowBuilder().addComponents(notifyButton);
-        
-        await interaction.editReply({
-          embeds: [embed],
-          components: [row]
-        });
-      }
-      
-      // Update verification message command
-      else if (commandName === 'updateverifymsg') {
-        // Permission check
-        if (!isStaffMember(interaction.member)) {
-          return interaction.reply({ 
-            content: 'You need staff permissions to use this command.',
-            flags: MessageFlags.Ephemeral
-          });
-        }
-        
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        
-        const verificationChannel = interaction.guild.channels.cache.get(config.verificationChannelId);
-        if (!verificationChannel) {
-          return interaction.editReply({
-            content: '❌ Verification channel not found. Please run /setup first.'
-          });
-        }
-        
-        // Fetch messages for deletion with error handling
-        const messages = await verificationChannel.messages.fetch({ limit: 10 }).catch(err => {
-          log(`Error fetching messages from verification channel`, 'ERROR', err);
-          return null;
-        });
-        
-        if (!messages) {
-          return interaction.editReply({
-            content: '❌ Error fetching messages from verification channel.'
-          });
-        }
-        
-        const botMessages = messages.filter(msg => msg.author.id === client.user.id);
-        
-        // Use our safer delete function
-        const deleteSuccess = await safeDeleteMessages(verificationChannel, botMessages);
-        
-        if (deleteSuccess) {
-          // Send new verification message
-          try {
-            await sendVerificationMessage(verificationChannel);
-            
-            await interaction.editReply({
-              content: '✅ Verification message updated successfully!'
-            });
-          } catch (error) {
-            log(`Error sending new verification message`, 'ERROR', error);
-            await interaction.editReply({
-              content: `❌ Error sending new verification message: ${error.message}`
-            });
-          }
-        } else {
-          await interaction.editReply({
-            content: '❌ Error deleting old messages. Try again later.'
-          });
-        }
-      }
-      
-      // NEW: Update verification message in additional channel command
-      else if (commandName === 'updateadditionalverifymsg') {
-        // Permission check
-        if (!isStaffMember(interaction.member)) {
-          return interaction.reply({ 
-            content: 'You need staff permissions to use this command.',
-            flags: MessageFlags.Ephemeral
-          });
-        }
-        
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        
-        const additionalChannel = interaction.guild.channels.cache.get(config.additionalVerificationChannelId);
-        if (!additionalChannel) {
-          return interaction.editReply({
-            content: '❌ Additional verification channel not found.'
-          });
-        }
-        
-        // Fetch messages for deletion with error handling
-        const messages = await additionalChannel.messages.fetch({ limit: 10 }).catch(err => {
-          log(`Error fetching messages from additional verification channel`, 'ERROR', err);
-          return null;
-        });
-        
-        if (!messages) {
-          return interaction.editReply({
-            content: '❌ Error fetching messages from additional verification channel.'
-          });
-        }
-        
-        const botMessages = messages.filter(msg => msg.author.id === client.user.id);
-        
-        // Use our safer delete function
-        const deleteSuccess = await safeDeleteMessages(additionalChannel, botMessages);
-        
-        if (deleteSuccess) {
-          // Send new verification message
-          try {
-            await sendVerificationMessage(additionalChannel);
-            
-            await interaction.editReply({
-              content: '✅ Verification message in additional channel updated successfully!'
-            });
-          } catch (error) {
-            log(`Error sending new verification message to additional channel`, 'ERROR', error);
-            await interaction.editReply({
-              content: `❌ Error sending new verification message: ${error.message}`
-            });
-          }
-        } else {
-          await interaction.editReply({
-            content: '❌ Error deleting old messages. Try again later.'
-          });
-        }
       }
     }
     
     // Handle context menu commands
     if (interaction.isUserContextMenuCommand()) {
-      const { commandName } = interaction;
-      
-      // Verify with MonkeyBytes context menu
-      if (commandName === 'Verify with MonkeyBytes') {
-        return sendVerificationUrl(interaction);
+      switch(interaction.commandName) {
+        case 'Verify Member':
+          await contextMenuHandlers.verifyMember(interaction);
+          break;
+        case 'Deauthorize Member':
+          await contextMenuHandlers.deauthorizeMember(interaction);
+          break;
+        case 'View User Stats':
+          await contextMenuHandlers.viewUserStats(interaction);
+          break;
       }
     }
+    
+    if (interaction.isMessageContextMenuCommand()) {
+      switch(interaction.commandName) {
+        case 'Mark as Rule Violation':
+          await contextMenuHandlers.markRuleViolation(interaction);
+          break;
+        case 'Add to Resources':
+          await contextMenuHandlers.addToResources(interaction);
+          break;
+      }
+    }
+    
+    // Handle modal submissions
+    if (interaction.isModalSubmit()) {
+      await handleModalSubmit(interaction);
+    }
   } catch (error) {
-    log(`Error in interaction handler`, 'ERROR', error);
-    // Try to send an error message if possible
-    if (interaction.replied || interaction.deferred) {
-      await interaction.editReply({
-        content: `❌ An error occurred while processing your command. Please try again later.`,
-        flags: MessageFlags.Ephemeral
-      }).catch(() => {});
-    } else {
-      await interaction.reply({
-        content: `❌ An error occurred while processing your command. Please try again later.`,
-        flags: MessageFlags.Ephemeral
-      }).catch(() => {});
+    logger.error(`Error in interaction handler`, error);
+    
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.editReply({
+          content: `❌ There was a glitch in the jungle. Please try again later.`,
+          ephemeral: true
+        }).catch(() => {});
+      } else {
+        await interaction.reply({
+          content: `❌ There was a glitch in the jungle. Please try again later.`,
+          ephemeral: true
+        }).catch(() => {});
+      }
+    } catch (replyError) {
+      logger.error(`Failed to send error response`, replyError);
     }
   }
 });
 
-// ==================== BUTTON HANDLER ====================
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-  
-  if (interaction.customId === 'check_pending_approvals') {
-    await interaction.deferReply({ ephemeral: true });
+// ==================== SHUTDOWN HANDLING ====================
+async function shutdown() {
+  try {
+    updateLastOnlineTime();
+    saveUserDB();
     
-    // Ensure pendingApprovals exists
-    if (!userDB.pendingApprovals) {
-      userDB.pendingApprovals = {};
-      saveUserDB();
-    }
-    
-    const pendingCount = Object.keys(userDB.pendingApprovals).length;
-    
-    if (pendingCount > 0) {
-      // Trigger the check for pending approvals
-      await checkPendingApprovals();
-      
-      // List the pending users
-      let pendingList = '';
-      try {
-        pendingList = Object.entries(userDB.pendingApprovals)
-          .filter(([_, userData]) => userData && userData.username) // Filter out invalid entries
-          .map(([userId, userData]) => `• <@${userId}> (${userData.username || 'Unknown'})`)
-          .join('\n');
-        
-        if (!pendingList || pendingList.trim() === '') {
-          pendingList = '*No valid pending approvals found*';
+    try {
+      const guild = client.guilds.cache.get(config.guildId);
+      if (guild) {
+        const uptimeLogsChannel = guild.channels.cache.get(config.uptimeLogsChannelId);
+        if (uptimeLogsChannel) {
+          const embed = new EmbedBuilder()
+            .setTitle('🛑 Monkey Going to Sleep')
+            .setDescription('Monkey bot is going to sleep now. Good night!')
+            .setColor('#FF0000')
+            .setTimestamp();
+          
+          await uptimeLogsChannel.send({ embeds: [embed] });
         }
-      } catch (error) {
-        log(`Error generating pending list`, 'ERROR', error);
-        pendingList = '*Error generating list*';
       }
-      
-      await interaction.editReply({
-        content: `✅ Sent notifications for ${pendingCount} pending approval(s).\n\nPending users:\n${pendingList}`
-      });
-    } else {
-      await interaction.editReply({
-        content: '✅ There are no pending approvals at this time.'
-      });
+    } catch (discordError) {
+      logger.error('Failed to send shutdown message to Discord', discordError);
     }
+    
+    try {
+      fs.writeFileSync(STOP_SIGNAL_FILE, `System-initiated shutdown at ${new Date().toISOString()}`);
+    } catch (fileError) {
+      logger.error('Failed to create stop signal file during shutdown', fileError);
+    }
+    
+    await client.destroy();
+    
+    if (server) {
+      server.close();
+    }
+    
+    setTimeout(() => process.exit(0), 1500);
+  } catch (error) {
+    logger.error('Error during shutdown', error);
+    setTimeout(() => process.exit(1), 1500);
   }
-});
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 // ==================== ERROR HANDLING ====================
 process.on('uncaughtException', (error) => {
-  log(`Uncaught Exception: ${error.message}`, 'FATAL', error);
-  // Don't exit, just log
+  logger.error(`Uncaught Exception: ${error.message}`, error);
 });
 
-process.on('unhandledRejection', (reason) => {
-  log(`Unhandled Rejection`, 'ERROR', reason);
-  // Don't exit, just log
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`, reason);
 });
 
 // ==================== INITIALIZATION ====================
-// Ensure user database is properly loaded or created before continuing
+logger.startup('🍌 Starting MonkeyBytes Jungle Bot');
 ensureDatabaseDirectory();
 ensureUserDBStructure();
 loadUserDB();
-log('Database initialization complete', 'STARTUP');
+
+// Start Express server
+let server;
+try {
+  server = app.listen(config.port, () => {
+    logger.startup(`Express server running on port ${config.port}`);
+  });
+  
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      logger.error(`Port ${config.port} is already in use.`);
+      process.exit(1);
+    } else {
+      logger.error(`Express server error: ${error.message}`, error);
+    }
+  });
+} catch (serverError) {
+  logger.error(`Failed to start Express server: ${serverError.message}`, serverError);
+  process.exit(1);
+}
 
 // Login to Discord
-client.login(config.token).then(() => {
-  log('Bot successfully logged in to Discord', 'COMPLETE');
-}).catch(error => {
-  log('Failed to log in to Discord', 'FATAL', error);
-  
-  // Try to restart after delay if login fails
+client.login(config.token).catch(error => {
+  logger.error('Failed to log in to Discord', error);
   setTimeout(() => {
-    log('Attempting to reconnect...', 'STARTUP');
+    logger.startup('Attempting to reconnect...');
     client.login(config.token).catch(reconnectError => {
-      log('Reconnection attempt failed', 'FATAL', reconnectError);
+      logger.error('Reconnection attempt failed', reconnectError);
     });
-  }, 30000); // Wait 30 seconds before retry
+  }, 30000);
 });
-
-// End of monkeybytes-auth-bot.mjs.
