@@ -1,3 +1,5 @@
+/// CURRENTLY OUTDATED, WE ARE ON IT!!
+
 # 🐵 MonkeyBytes Authentication Bot 🍌
 
 A friendly Discord verification bot designed specifically for the MonkeyBytes Tech community. This bot helps keep our jungle safe by verifying community members through Discord!
