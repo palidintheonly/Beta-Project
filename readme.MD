@@ -1,4 +1,4 @@
-/// CURRENTLY OUTDATED, WE ARE ON IT!!
+### CURRENTLY OUTDATED, WE ARE ON IT!!
 
 # 🐵 MonkeyBytes Authentication Bot 🍌
 
