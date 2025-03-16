@@ -1,30 +1,36 @@
-# MonkeyBytes Authentication Bot
+# 🐒 MonkeyBytes Authentication Bot
+
+[![Discord](https://img.shields.io/discord/123456789?color=7289da&logo=discord&logoColor=white&label=Discord)](https://discord.gg/monkeybytes)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yourusername/monkeybytes-auth-bot)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-14.x-43853d.svg?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Status](https://img.shields.io/badge/status-active-success.svg)]()
 
 A Discord bot for managing user authentication and verification in the MonkeyBytes community server. This bot provides a seamless verification experience with a custom medieval/royal court theme.
 
-## Features
+## ✨ Features
 
-### Authentication System
+### 🔐 Authentication System
 - OAuth2 Discord authentication flow
 - Web-based verification portal
 - Staff approval queue for new verification requests
 - Role assignment for verified members
 - Complete tracking of verified, pending, and deauthorized users
 
-### Moderation Tools
+### 🛡️ Moderation Tools
 - Deauthorize problematic users
 - Mark messages as rule violations
 - Track user statistics
 - Resource collection system for saving valuable content
 
-### Member Commands
+### 👨‍💻 Member Commands
 - `/help` - Shows available commands and how to use them
 - `/verify` - Starts the verification process
 - `/resources` - Shows available coding resources
 - `/roles` - Explains server roles and how to get them
 - `/report` - Report issues to staff
 
-### Staff Commands
+### 👑 Staff Commands
 - Context menu: `Verify Member` - Manually verify a user
 - Context menu: `Deauthorize Member` - Remove verification from a user
 - Context menu: `View User Stats` - See details about a user's status
@@ -33,13 +39,13 @@ A Discord bot for managing user authentication and verification in the MonkeyByt
 - `/restart` - Safely restart the bot
 - `/stop` - Safely shut down the bot
 
-### Monitoring
+### 📊 Monitoring
 - Uptime tracking and reporting
 - Memory usage monitoring
 - Service heartbeat messages
 - Downtime detection
 
-## Installation
+## 🚀 Installation
 
 1. Clone this repository
 ```bash
@@ -68,7 +74,7 @@ const config = {
 node monkeybytes-auth-bot.mjs
 ```
 
-## Setting Up Discord Application
+## ⚙️ Setting Up Discord Application
 
 1. Create a new application at the [Discord Developer Portal](https://discord.com/developers/applications)
 
@@ -85,7 +91,7 @@ node monkeybytes-auth-bot.mjs
 4. Configure redirect URLs:
    - Add your OAuth2 redirect URL (e.g., `http://your-server-url:20295/auth/callback`)
 
-## Required Channels
+## 📝 Required Channels
 
 The bot needs these channels to be set up (IDs configured directly in the code):
 - Verification category
@@ -96,13 +102,13 @@ The bot needs these channels to be set up (IDs configured directly in the code):
 - Heartbeat channel (for service status updates)
 - Uptime logs channel (for uptime reporting)
 
-## Database
+## 💾 Database
 
 The bot uses a file-based database system storing data in:
 - `./monkey-verified-users.json` - User verification data
 - `./monkey-uptime-history.json` - Uptime tracking
 
-## Customization
+## 🎨 Customization
 
 You can customize the bot's appearance and messages by editing these variables in the configuration section of the code:
 
@@ -117,7 +123,7 @@ const config = {
 };
 ```
 
-## Running in Production
+## 🏭 Running in Production
 
 For production use, it's recommended to use a process manager like PM2:
 
@@ -135,23 +141,23 @@ pm2 save
 
 Staff can also use the `/restart` and `/stop` commands within Discord to manage the bot's lifecycle.
 
-## Security Considerations
+## 🔒 Security Considerations
 
 - The bot implements basic security headers for the web interface
 - Session management with secure cookies
 - IP filtering for sensitive endpoints
 - Role-based access control for staff commands
 
-**Important:** Make sure to get your own Discord credentials before deploying.
+**⚠️ Important:** Make sure to get your own Discord credentials before deploying.
 
-## License
+## 📄 License
 
 [MIT License](LICENSE)
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Support
+## 🆘 Support
 
 For issues or questions, please open an issue on this repository.
