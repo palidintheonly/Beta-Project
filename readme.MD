@@ -1,10 +1,10 @@
 # 🐒 MonkeyBytes Authentication Bot
 
 [![Discord](https://img.shields.io/discord/1092952464766021632?color=7289da&logo=discord&logoColor=white&label=Discord)](https://discord.gg/yp57R5s7gq)
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/yourusername/monkeybytes-auth-bot)(https://github.com/yourusername/monkeybytes-auth-bot)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/palidintheonly/Beta-Project)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/palidintheonly/Beta-Project/blob/main/LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-14.x-43853d.svg?logo=node.js&logoColor=white)](https://nodejs.org)
-[![Status](https://img.shields.io/badge/status-active-success.svg)]()
+[![Status](https://img.shields.io/badge/status-active-success.svg)](https://github.com/palidintheonly/Beta-Project)
 
 A Discord bot for managing user authentication and verification in the MonkeyBytes community server. This bot provides a seamless verification experience with a custom medieval/royal court theme.
 
@@ -49,8 +49,8 @@ A Discord bot for managing user authentication and verification in the MonkeyByt
 
 1. Clone this repository
 ```bash
-git clone https://github.com/yourusername/monkeybytes-auth-bot.git
-cd monkeybytes-auth-bot
+git clone https://github.com/palidintheonly/Beta-Project.git
+cd Beta-Project
 ```
 
 2. Install dependencies
@@ -152,15 +152,15 @@ Staff can also use the `/restart` and `/stop` commands within Discord to manage 
 
 ## 📄 License
 
-[MIT License](LICENSE)
+[MIT License](https://github.com/palidintheonly/Beta-Project/blob/main/LICENSE)
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please feel free to submit a Pull Request to the [GitHub repository](https://github.com/palidintheonly/Beta-Project).
 
 ## 🆘 Support
 
-For issues or questions, please open an issue on this repository or join our Discord community:
+For issues or questions, please open an issue on the [GitHub repository](https://github.com/palidintheonly/Beta-Project) or join our Discord community:
 
 [![Discord](https://img.shields.io/discord/1092952464766021632?color=7289da&logo=discord&logoColor=white&label=Discord)](https://discord.gg/yp57R5s7gq)
 
