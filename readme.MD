@@ -1,67 +1,157 @@
-### CURRENTLY OUTDATED, WE ARE ON IT!!
+# MonkeyBytes Authentication Bot
 
-# 🐵 MonkeyBytes Authentication Bot 🍌
+A Discord bot for managing user authentication and verification in the MonkeyBytes community server. This bot provides a seamless verification experience with a custom medieval/royal court theme.
 
-A friendly Discord verification bot designed specifically for the MonkeyBytes Tech community. This bot helps keep our jungle safe by verifying community members through Discord!
+## Features
 
-## ✨ What This Bot Does
+### Authentication System
+- OAuth2 Discord authentication flow
+- Web-based verification portal
+- Staff approval queue for new verification requests
+- Role assignment for verified members
+- Complete tracking of verified, pending, and deauthorized users
 
-- 🔐 **Easy Verification** - One-click verification for new members
-- 🎭 **Automatic Role Assignment** - Members get the verified role instantly
-- 🏆 **Member Tracking** - Keeps track of our growing community
-- 📝 **Customizable Messages** - Personalized welcome for new jungle members
-- 📋 **Verification Logs** - Monitors who's joining our coding jungle
-- 👑 **Staff Controls** - Special tools for our jungle guides (staff)
-- 🙋‍♂️ **Manual Verification** - Staff can help monkeys who have trouble with verification
-- 🚫 **Moderation** - Staff can remove verification when needed
+### Moderation Tools
+- Deauthorize problematic users
+- Mark messages as rule violations
+- Track user statistics
+- Resource collection system for saving valuable content
 
-## 🍌 For New Members
+### Member Commands
+- `/help` - Shows available commands and how to use them
+- `/verify` - Starts the verification process
+- `/resources` - Shows available coding resources
+- `/roles` - Explains server roles and how to get them
+- `/report` - Report issues to staff
 
-When you join the MonkeyBytes server:
+### Staff Commands
+- Context menu: `Verify Member` - Manually verify a user
+- Context menu: `Deauthorize Member` - Remove verification from a user
+- Context menu: `View User Stats` - See details about a user's status
+- Context menu: `Mark as Rule Violation` - Flag a message as breaking rules
+- Context menu: `Add to Resources` - Save a message to resources channel
+- `/restart` - Safely restart the bot
+- `/stop` - Safely shut down the bot
 
-1. Head to the `#get-your-banana` channel
-2. Click the "🍌 Get Verified" button
-3. Authorize with Discord when prompted
-4. You'll receive your verified role and access to the community!
+### Monitoring
+- Uptime tracking and reporting
+- Memory usage monitoring
+- Service heartbeat messages
+- Downtime detection
 
-## 🦧 For Staff Members
+## Installation
 
-### Available Commands
-- `/verify` - Generate a verification link for a user
-- `/setup` - Set up the verification system (Admin only)
-- `/stats` - View verification statistics
-- `/checkuser [user]` - Check if a user is verified
-- `/setwelcome` - Change the welcome message
-- `/setverificationmsg` - Change the verification prompt
-- `/manualverify [user]` - Manually verify a user
-- `/updateverifymsg` - Refresh the verification message
-- `/deauth [user] [reason]` - Remove verification from a user
+1. Clone this repository
+```bash
+git clone https://github.com/yourusername/monkeybytes-auth-bot.git
+cd monkeybytes-auth-bot
+```
 
-Staff can also right-click on users to:
-- `Verify with MonkeyBytes` - Quick way to verify someone
-- `Deauthorize User` - Quick way to remove verification
+2. Install dependencies
+```bash
+npm install discord.js express express-session passport passport-discord fs path
+```
 
-## 🐒 Cool Features
+3. Edit the configuration in the source code:
+```javascript
+// Find and edit the config object in monkeybytes-auth-bot.mjs
+const config = {
+  clientId: 'Get your own Discord client ID',
+  clientSecret: 'Get your own Discord client secret',
+  token: 'Get your own Discord bot token',
+  // Other configuration values...
+};
+```
 
-- Every verified user gets a banana! 🍌
-- The bot tracks how many monkeys have joined our jungle
-- Custom MonkeyBytes branding throughout all messages
-- Friendly welcome messages for new community members
+4. Start the bot
+```bash
+node monkeybytes-auth-bot.mjs
+```
 
-## 🌴 About MonkeyBytes
+## Setting Up Discord Application
 
-MonkeyBytes is a tech community where coding enthusiasts gather to learn, share, and grow together. Our "Code Jungle" is a place for developers of all skill levels!
+1. Create a new application at the [Discord Developer Portal](https://discord.com/developers/applications)
 
-## 🍌 Why "Bananas"?
+2. Under the "Bot" tab, create a bot and enable:
+   - Presence Intent
+   - Server Members Intent
+   - Message Content Intent
 
-You might be wondering, "Why does MonkeyBytes call verification tokens 'bananas'?" Well, here's the inside scoop:
+3. Under "OAuth2" > "URL Generator":
+   - Select scopes: `bot`, `applications.commands`
+   - Select permissions: `Manage Roles`, `Send Messages`, `Read Messages/View Channels`, `Add Reactions`
+   - Copy the generated URL and use it to invite the bot to your server
 
-In the coding jungle, regular authentication tokens are boring and technical. But we're monkeys! And what do monkeys love more than anything? BANANAS! 🍌
+4. Configure redirect URLs:
+   - Add your OAuth2 redirect URL (e.g., `http://your-server-url:20295/auth/callback`)
 
-When you get verified, you're essentially grabbing your "access banana" to enter our tree house. It's our way of making even the security parts of our community fun and on-brand. Plus, it's much more exciting to say "I got my banana!" than "My OAuth2 token was successfully validated."
+## Required Channels
 
-So grab your banana, swing into our channels, and join the MonkeyBytes troop! 🐒
+The bot needs these channels to be set up (IDs configured directly in the code):
+- Verification category
+- Verification channel (where users click to verify)
+- Staff approval channel (for approval requests)
+- Log channel (for activity logs)
+- Resources channel (for saved resources)
+- Heartbeat channel (for service status updates)
+- Uptime logs channel (for uptime reporting)
 
----
+## Database
 
-© MonkeyBytes Tech | The Code Jungle 🍌💻
+The bot uses a file-based database system storing data in:
+- `./monkey-verified-users.json` - User verification data
+- `./monkey-uptime-history.json` - Uptime tracking
+
+## Customization
+
+You can customize the bot's appearance and messages by editing these variables in the configuration section of the code:
+
+```javascript
+const config = {
+  // ... other config
+  embedColor: '#3eff06',
+  embedFooter: '© MonkeyBytes Tech | The Royal Court',
+  welcomeMessage: "🎉 Welcome message...",
+  verificationMessage: "To join the MonkeyBytes court...",
+  // ... other config
+};
+```
+
+## Running in Production
+
+For production use, it's recommended to use a process manager like PM2:
+
+```bash
+# Install PM2
+npm install -g pm2
+
+# Start the bot with PM2
+pm2 start monkeybytes-auth-bot.mjs --name monkeybytes-auth
+
+# Make it start on system boot
+pm2 startup
+pm2 save
+```
+
+Staff can also use the `/restart` and `/stop` commands within Discord to manage the bot's lifecycle.
+
+## Security Considerations
+
+- The bot implements basic security headers for the web interface
+- Session management with secure cookies
+- IP filtering for sensitive endpoints
+- Role-based access control for staff commands
+
+**Important:** Make sure to get your own Discord credentials before deploying.
+
+## License
+
+[MIT License](LICENSE)
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Support
+
+For issues or questions, please open an issue on this repository.
