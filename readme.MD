@@ -1,7 +1,7 @@
 # 🐒 MonkeyBytes Authentication Bot
 
-[![Discord](https://img.shields.io/discord/123456789?color=7289da&logo=discord&logoColor=white&label=Discord)](https://discord.gg/yp57R5s7gq)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yourusername/monkeybytes-auth-bot)
+[![Discord](https://img.shields.io/discord/1092952464766021632?color=7289da&logo=discord&logoColor=white&label=Discord)](https://discord.gg/yp57R5s7gq)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/yourusername/monkeybytes-auth-bot)(https://github.com/yourusername/monkeybytes-auth-bot)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-14.x-43853d.svg?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Status](https://img.shields.io/badge/status-active-success.svg)]()
