@@ -160,4 +160,12 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 🆘 Support
 
-For issues or questions, please open an issue on this repository.
+For issues or questions, please open an issue on this repository or join our Discord community:
+
+[![Discord](https://img.shields.io/discord/1092952464766021632?color=7289da&logo=discord&logoColor=white&label=Discord)](https://discord.gg/yp57R5s7gq)
+
+<div align="center">
+  <a href="https://discord.gg/yp57R5s7gq">
+    <img src="https://discordapp.com/api/guilds/1092952464766021632/widget.png?style=banner4" alt="Join the MonkeyBytes Discord community">
+  </a>
+</div>
