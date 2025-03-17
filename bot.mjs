@@ -14,29 +14,46 @@ import { exec } from 'child_process';
 
 // ==================== CONFIGURATION ====================
 const config = {
-  clientId: 'YOUR_CLIENT_ID_HERE',
-  clientSecret: 'YOUR_CLIENT_SECRET_HERE',
-  token: 'YOUR_BOT_TOKEN_HERE',
-  port: 20295,
-  redirectUri: 'http://your-domain.com:20295/auth/callback',
-  serverUrl: 'http://your-domain.com:20295',
-  guildId: 'YOUR_GUILD_ID_HERE',
-  verifiedRoleId: 'YOUR_VERIFIED_ROLE_ID_HERE', 
-  staffRoleId: 'YOUR_STAFF_ROLE_ID_HERE', 
-  verificationCategoryId: 'YOUR_VERIFICATION_CATEGORY_ID_HERE',
-  verificationChannelId: 'YOUR_VERIFICATION_CHANNEL_ID_HERE',
-  logChannelId: 'YOUR_LOG_CHANNEL_ID_HERE',
-  approvalChannelId: 'YOUR_APPROVAL_CHANNEL_ID_HERE',
-  heartbeatChannelId: 'YOUR_HEARTBEAT_CHANNEL_ID_HERE',
-  uptimeLogsChannelId: 'YOUR_UPTIME_LOGS_CHANNEL_ID_HERE',
-  resourcesChannelId: 'YOUR_RESOURCES_CHANNEL_ID_HERE',
-  sessionSecret: 'YOUR_SESSION_SECRET_HERE',
-  dbPath: './monkey-verified-users.json',
-  embedColor: '#3eff06',
-  embedFooter: '© MonkeyBytes Tech | The Code Jungle',
-  welcomeMessage: "🎉 You got your banana! Welcome to the MonkeyBytes jungle! 🌴\n\nYour verification has been approved by our monkey elders, and you now have full access to all our coding vines, jungle channels, and community treehouse.\n\n🐒 Don't be shy - introduce yourself to the other monkeys in our community channels\n💻 Explore our code repositories and learning resources in the banana archives\n🍌 Enjoy your verified status and all the jungle perks that come with it!\n\nIf you need help swinging through the vines, our monkey guides are just a message away!",
-  verificationMessage: "To join the MonkeyBytes jungle, you'll need to get your verification banana. Click the button below to begin the verification process! 🍌\n\nAfter you authenticate, a monkey elder will review and approve your request.\n\nThis verification process helps us keep our coding jungle safe from curious snakes and mischievous critters.",
-  heartbeatInterval: 630000, // 10.5 minutes
+  // Discord Application Settings
+  clientId: 'YOUR_DISCORD_CLIENT_ID',           // Discord Application ID
+  clientSecret: 'YOUR_DISCORD_CLIENT_SECRET',   // Discord Application Secret
+  token: 'YOUR_DISCORD_BOT_TOKEN',              // Discord Bot Token
+  
+  // Web Server Settings
+  port: 4010,                                   // Port the authentication web server runs on
+  redirectUri: 'http://your-server-url:4010/auth/callback', // OAuth redirect URL
+  serverUrl: 'http://your-server-url:4010',     // Public URL of the authentication server
+  sessionSecret: 'YOUR_SESSION_SECRET',         // Secret for session encryption
+  
+  // Discord Server Settings
+  guildId: 'YOUR_GUILD_ID',                     // Discord Server ID
+  
+  // Role IDs
+  verifiedRoleId: 'YOUR_VERIFIED_ROLE_ID',      // Role given to verified members
+  staffRoleId: 'YOUR_STAFF_ROLE_ID',            // Role for staff members who can approve verifications
+  
+  // Channel IDs - Create these channels in your Discord server
+  verificationCategoryId: 'YOUR_CATEGORY_ID',   // Category for verification-related channels
+  verificationChannelId: 'YOUR_VERIFY_CHANNEL_ID', // Channel where users click to verify
+  logChannelId: 'YOUR_LOG_CHANNEL_ID',          // Channel for logging verification events
+  approvalChannelId: 'YOUR_APPROVAL_CHANNEL_ID', // Channel where staff approve verification requests
+  heartbeatChannelId: 'YOUR_HEARTBEAT_CHANNEL_ID', // Channel for bot status updates
+  uptimeLogsChannelId: 'YOUR_UPTIME_LOGS_CHANNEL_ID', // Channel for bot uptime/downtime logs
+  resourcesChannelId: 'YOUR_RESOURCES_CHANNEL_ID', // Channel where resources are stored
+  
+  // Database Settings
+  dbPath: './monkey-verified-users.json',       // Local database file path
+  
+  // Visual Settings
+  embedColor: '#3eff06',                        // Color for Discord embeds
+  embedFooter: '© MonkeyBytes Tech | The Royal Court', // Footer for Discord embeds
+  
+  // Message Templates
+  welcomeMessage: "🎉 Thou hast received thy Royal Seal! Welcome to the MonkeyBytes kingdom! 🏰\n\nThy verification hath been approved by our noble Lords, and thou now haveth full access to all our coding chambers, royal halls, and the great assembly of knights.\n\n🛡️ Be not shy - introduce thyself to the other nobles in our assembly halls\n💻 Explore our code repositories and learning resources in the royal archives\n📜 Enjoy thy verified status and all the realm privileges that come with it!\n\nIf thou requireth assistance navigating the corridors of knowledge, our royal guides are but a message away!",
+  verificationMessage: "To join the MonkeyBytes court, thou must obtain thy Royal Seal. Click upon the button below to begin the verification process! 📜\n\nAfter thou hast authenticated, a Lord of the realm shall review and approve thy request.\n\nThis verification process helpeth us keep our coding kingdom safe from curious knaves and mischievous rogues.",
+  
+  // Timing Settings
+  heartbeatInterval: 630000, // 10.5 minutes between status updates
 };
 
 // ==================== GLOBAL VARIABLES ====================
@@ -71,15 +88,44 @@ const STOP_SIGNAL_FILE = './stop.signal';
 // ==================== LOGGER ====================
 const logger = {
   log: (message, level = 'INFO', error = null) => {
-    console.log(`[${level}] ${message}`);
-    if (error) console.error(error);
+    const timestamp = new Date().toISOString().replace('T', ' ').substr(0, 23);
+    let colorCode = '';
+    
+    // Google-style colors
+    switch(level) {
+      case 'INFO':
+        colorCode = '\x1b[34m'; // Blue
+        break;
+      case 'WARN':
+        colorCode = '\x1b[33m'; // Yellow
+        break;
+      case 'ERROR':
+        colorCode = '\x1b[31m'; // Red
+        break;
+      case 'SUCCESS':
+        colorCode = '\x1b[32m'; // Green
+        break;
+      case 'STARTUP':
+        colorCode = '\x1b[35m'; // Magenta
+        break;
+      case 'COMMAND':
+        colorCode = '\x1b[36m'; // Cyan
+        break;
+      default:
+        colorCode = '\x1b[37m'; // White
+    }
+    
+    // Google-style logging format with colors
+    console.log(`${colorCode}[${level}] ${timestamp}\x1b[0m ${message}`);
+    if (error) console.error(`\x1b[31m[ERROR DETAILS]\x1b[0m`, error);
     return true;
   },
   info: (msg, err) => logger.log(msg, 'INFO', err),
   warn: (msg, err) => logger.log(msg, 'WARN', err),
   error: (msg, err) => logger.log(msg, 'ERROR', err),
   success: (msg, err) => logger.log(msg, 'SUCCESS', err),
-  startup: (msg, err) => logger.log(msg, 'STARTUP', err)
+  startup: (msg, err) => logger.log(msg, 'STARTUP', err),
+  command: (msg, err) => logger.log(msg, 'COMMAND', err)
 };
 
 // ==================== HTML TEMPLATES ====================
@@ -106,38 +152,38 @@ const htmlTemplates = {
   `,
   
   homePage: () => htmlTemplates.wrapper(`
-    <h1>MonkeyBytes Jungle Authentication</h1>
-    <p>Click the button below to get your banana and access the coding jungle!</p>
-    <a href="/auth" class="button">Get Your Banana 🍌</a>
-  `, 'MonkeyBytes Jungle Authentication', '#FF9B21'),
+    <h1>MonkeyBytes Royal Authentication</h1>
+    <p>Click the button below to receive thy Royal Seal and access the coding kingdom!</p>
+    <a href="/auth" class="button">Receive Thy Royal Seal 📜</a>
+  `, 'MonkeyBytes Royal Authentication', '#FF9B21'),
   
   pendingPage: () => htmlTemplates.wrapper(`
     <div class="icon">⏳</div>
-    <h1>Awaiting Banana Approval</h1>
-    <p>Your request to join the MonkeyBytes jungle has been sent to the monkey elders for approval.</p>
-    <p>You will be notified once they've reviewed your request!</p>
-    <p>You can close this window and return to Discord.</p>
-  `, 'Awaiting Banana Approval', '#FFA500'),
+    <h1>Awaiting Royal Approval</h1>
+    <p>Thy request to join the MonkeyBytes realm hath been sent to the Lords for approval.</p>
+    <p>Thou shalt be notified once they have reviewed thy petition!</p>
+    <p>Thou may close this window and return to Discord.</p>
+  `, 'Awaiting Royal Approval', '#FFA500'),
   
   successPage: () => htmlTemplates.wrapper(`
     <div class="icon">✓</div>
-    <h1>You Got Your Banana!</h1>
-    <p>You have been verified and can now access the MonkeyBytes jungle!</p>
-    <p>You can close this window and return to Discord.</p>
+    <h1>Thou Hast Received Thy Royal Seal!</h1>
+    <p>Thou hast been verified and may now access the MonkeyBytes realm!</p>
+    <p>Thou may close this window and return to Discord.</p>
   `, 'Verification Successful', '#4CAF50'),
   
   errorPage: () => htmlTemplates.wrapper(`
     <div class="icon">❌</div>
-    <h1>Jungle Authentication Error</h1>
-    <p>Oh no! The banana slipped. An error occurred during the verification process.</p>
-    <p>If this problem persists, please contact a monkey elder (server administrator).</p>
-  `, 'Jungle Authentication Error', '#FF5555'),
+    <h1>Royal Authentication Error</h1>
+    <p>Alas! The royal seal hath slipped. An error occurred during the verification process.</p>
+    <p>If this problem persisteth, pray contact a Lord (server administrator).</p>
+  `, 'Royal Authentication Error', '#FF5555'),
   
   serverErrorPage: () => htmlTemplates.wrapper(`
     <div class="icon">❌</div>
-    <h1>Jungle Server Error</h1>
-    <p>The monkeys are having technical difficulties. Please try again later!</p>
-  `, 'Jungle Server Error', '#FF5555')
+    <h1>Royal Server Error</h1>
+    <p>The nobles are having technical difficulties. Pray try again later!</p>
+  `, 'Royal Server Error', '#FF5555')
 };
 
 // ==================== DATABASE FUNCTIONS ====================
@@ -252,8 +298,8 @@ passport.use(new Strategy({
     accessToken,
     refreshToken,
     verifiedAt: new Date().toISOString(),
-    bananaCount: 1,
-    tier: "banana"
+    vassalage: 1,
+    tier: "knight"
   };
   
   logger.info(`User authenticated: ${userData.username}#${userData.discriminator} (${userData.id})`);
@@ -338,9 +384,9 @@ app.use((err, _req, res, _next) => {
 // ==================== DISCORD BOT FUNCTIONS ====================
 function setRotatingPresence() {
   const statusMessages = [
-    { text: '🍌 Type /help for jungle guidance', type: ActivityType.Playing },
-    { text: '👆 Click for a banana in #get-your-banana', type: ActivityType.Watching },
-    { text: '🔑 Get verified for full jungle access', type: ActivityType.Competing },
+    { text: '📜 Type /help for royal guidance', type: ActivityType.Playing },
+    { text: '👆 Click for a royal seal in #verify', type: ActivityType.Watching },
+    { text: '🔑 Get verified for full realm access', type: ActivityType.Competing },
     { text: '❓ Lost? Use /help command', type: ActivityType.Listening }
   ];
   
@@ -373,7 +419,7 @@ async function sendVerificationRequestToChannel(userId, username) {
     
     const acceptButton = new ButtonBuilder()
       .setCustomId(`approve_${userId}`)
-      .setLabel('✅ Accept')
+      .setLabel('✅ Grant Royal Seal')
       .setStyle(ButtonStyle.Success);
     
     const denyButton = new ButtonBuilder()
@@ -385,10 +431,10 @@ async function sendVerificationRequestToChannel(userId, username) {
       .addComponents(acceptButton, denyButton);
     
     const embed = new EmbedBuilder()
-      .setTitle('🍌 Pending Banana Request')
-      .setDescription(`<@${userId}> (${username}) is requesting to join the jungle.${
+      .setTitle('📜 Pending Royal Seal Request')
+      .setDescription(`<@${userId}> (${username}) seeketh to join the royal court.${
         wasDeauthorized 
-          ? `\n\n⚠️ **Note:** This monkey previously had their banana taken.\n**Reason:** ${wasDeauthorized.deauthorizationReason || 'No reason provided'}` 
+          ? `\n\n⚠️ **Note:** This noble previously had their royal seal revoked.\n**Reason:** ${wasDeauthorized.deauthorizationReason || 'No reason provided'}` 
           : ''
       }`)
       .setColor(wasDeauthorized ? '#FF9B21' : config.embedColor)
@@ -439,11 +485,11 @@ async function processVerificationApproval(userId, approved, staffId) {
             const logChannel = guild.channels.cache.get(config.logChannelId);
             if (logChannel) {
               const embed = new EmbedBuilder()
-                .setTitle('🍌 New Monkey in the Jungle')
-                .setDescription(`<@${userId}> has been given their banana after jungle elder approval!`)
+                .setTitle('📜 New Noble in the Realm')
+                .setDescription(`<@${userId}> hath been granted a royal seal after lordly approval!`)
                 .addFields(
-                  { name: 'Monkey Name', value: `${userData.username}#${userData.discriminator}`, inline: true },
-                  { name: 'Monkey ID', value: userId, inline: true },
+                  { name: 'Noble Name', value: `${userData.username}#${userData.discriminator}`, inline: true },
+                  { name: 'Noble ID', value: userId, inline: true },
                   { name: 'Approved By', value: `<@${staffId}>`, inline: true }
                 )
                 .setColor(config.embedColor)
@@ -458,7 +504,7 @@ async function processVerificationApproval(userId, approved, staffId) {
               await member.send({
                 embeds: [
                   new EmbedBuilder()
-                    .setTitle('🎉 Welcome to the MonkeyBytes Jungle!')
+                    .setTitle('🎉 Welcome to the MonkeyBytes Realm!')
                     .setDescription(config.welcomeMessage)
                     .setColor(config.embedColor)
                     .setFooter({ text: config.embedFooter })
@@ -479,11 +525,11 @@ async function processVerificationApproval(userId, approved, staffId) {
         const logChannel = guild.channels.cache.get(config.logChannelId);
         if (logChannel) {
           const embed = new EmbedBuilder()
-            .setTitle('❌ Banana Request Denied')
-            .setDescription(`<@${userId}>'s request to join the jungle was denied by <@${staffId}>.`)
+            .setTitle('❌ Royal Seal Request Denied')
+            .setDescription(`<@${userId}>'s request to join the realm was denied by <@${staffId}>.`)
             .addFields(
-              { name: 'Monkey Name', value: `${userData.username}#${userData.discriminator}`, inline: true },
-              { name: 'Monkey ID', value: userId, inline: true },
+              { name: 'Noble Name', value: `${userData.username}#${userData.discriminator}`, inline: true },
+              { name: 'Noble ID', value: userId, inline: true },
               { name: 'Denied By', value: `<@${staffId}>`, inline: true }
             )
             .setColor('#FF0000')
@@ -503,8 +549,8 @@ async function processVerificationApproval(userId, approved, staffId) {
             await member.send({
               embeds: [
                 new EmbedBuilder()
-                  .setTitle('❌ Banana Access Denied')
-                  .setDescription(`Your request to join the MonkeyBytes jungle has been declined by our monkey elders. If you believe this is a mistake in the jungle, please contact the server administrators to appeal.`)
+                  .setTitle('❌ Royal Seal Access Denied')
+                  .setDescription(`Thy request to join the MonkeyBytes realm hath been declined by our Lords. If thou believest this to be a mistake in the realm, pray contact the server administrators to appeal.`)
                   .setColor('#FF0000')
                   .setFooter({ text: config.embedFooter })
               ]
@@ -576,13 +622,13 @@ function isStaffMember(member) {
 async function sendVerificationMessage(channel) {
   const verifyButton = new ButtonBuilder()
     .setCustomId('verify_button')
-    .setLabel('🍌 Get Your Banana')
+    .setLabel('📜 Receive Thy Royal Seal')
     .setStyle(ButtonStyle.Primary);
 
   const row = new ActionRowBuilder().addComponents(verifyButton);
 
   const embed = new EmbedBuilder()
-    .setTitle('🐵 MonkeyBytes Verification')
+    .setTitle('🛡️ MonkeyBytes Verification')
     .setDescription(config.verificationMessage)
     .setColor(config.embedColor)
     .setFooter({ text: config.embedFooter })
@@ -594,13 +640,131 @@ async function sendVerificationMessage(channel) {
 function sendVerificationUrl(interaction) {
   const authUrl = `${config.serverUrl}/auth`;
   const embed = new EmbedBuilder()
-    .setTitle('🐵 Get Your Banana!')
-    .setDescription(`Click [here to verify](${authUrl}) your account and join the jungle.\n\nThis will open the authentication page. After authorizing with Discord, the monkey elders will review your request.`)
+    .setTitle('🛡️ Receive Thy Royal Seal!')
+    .setDescription(`Click [here to verify](${authUrl}) thy account and join the realm.\n\nThis shall open the authentication page. After authorizing with Discord, the Lords shall review thy request.`)
     .setColor(config.embedColor)
     .setFooter({ text: config.embedFooter })
     .setTimestamp();
 
   return interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+// Check if database matches actual role assignments and fix discrepancies
+async function syncDatabaseWithRoles() {
+  try {
+    const guild = client.guilds.cache.get(config.guildId);
+    if (!guild) {
+      logger.error("Guild not found when syncing database");
+      return;
+    }
+    
+    // Fetch all members (this may take time for large servers)
+    await guild.members.fetch();
+    
+    // Create sets for tracking changes
+    let addedToVerified = 0;
+    let removedFromVerified = 0;
+    
+    // Check members with the role but not in database
+    const membersWithRole = guild.members.cache.filter(member => 
+      !member.user.bot && member.roles.cache.has(config.verifiedRoleId)
+    );
+    
+    for (const [memberId, member] of membersWithRole) {
+      // If member has role but isn't in verified list
+      if (!userDB.verifiedUsers[memberId]) {
+        // Add them to verified list
+        userDB.verifiedUsers[memberId] = {
+          id: memberId,
+          username: member.user.username,
+          discriminator: member.user.discriminator || '0',
+          globalName: member.user.globalName || member.user.username,
+          avatar: member.user.avatar,
+          verifiedAt: new Date().toISOString(),
+          verificationIP: 'role-sync',
+          vassalage: 1,
+          tier: "knight",
+          manuallyVerifiedBy: 'system',
+          verificationReason: 'Database sync - user had role'
+        };
+        
+        // Remove from deauthorized if they were there
+        if (userDB.deauthorizedUsers && userDB.deauthorizedUsers[memberId]) {
+          delete userDB.deauthorizedUsers[memberId];
+        }
+        
+        addedToVerified++;
+      }
+    }
+    
+    // Check users in database who don't have the role
+    for (const memberId in userDB.verifiedUsers) {
+      try {
+        const member = await guild.members.fetch(memberId).catch(() => null);
+        
+        // If member exists but doesn't have the role
+        if (member && !member.roles.cache.has(config.verifiedRoleId)) {
+          const userData = { ...userDB.verifiedUsers[memberId] };
+          
+          // Move to deauthorized
+          userDB.deauthorizedUsers[memberId] = {
+            ...userData,
+            deauthorizedAt: new Date().toISOString(),
+            deauthorizedBy: 'system',
+            deauthorizationReason: 'Database sync - user missing role'
+          };
+          
+          // Remove from verified
+          delete userDB.verifiedUsers[memberId];
+          
+          removedFromVerified++;
+        }
+        // If member doesn't exist in server anymore
+        else if (!member) {
+          const userData = { ...userDB.verifiedUsers[memberId] };
+          
+          // Move to deauthorized
+          userDB.deauthorizedUsers[memberId] = {
+            ...userData,
+            deauthorizedAt: new Date().toISOString(),
+            deauthorizedBy: 'system',
+            deauthorizationReason: 'Database sync - user not in server'
+          };
+          
+          // Remove from verified
+          delete userDB.verifiedUsers[memberId];
+          
+          removedFromVerified++;
+        }
+      } catch (memberError) {
+        logger.error(`Error syncing roles for member ${memberId}`, memberError);
+      }
+    }
+    
+    // Save changes if any were made
+    if (addedToVerified > 0 || removedFromVerified > 0) {
+      saveUserDB();
+      logger.info(`Database sync complete: Added ${addedToVerified} users, Removed ${removedFromVerified} users`);
+      
+      // Log to the log channel
+      const logChannel = guild.channels.cache.get(config.logChannelId);
+      if (logChannel) {
+        const embed = new EmbedBuilder()
+          .setTitle('🔄 Royal Census Completed')
+          .setDescription(`The royal record keepers have updated the realm's census.`)
+          .addFields([
+            { name: 'Census Results', value: `• ${addedToVerified} nobles added to royal records\n• ${removedFromVerified} nobles removed from royal records\n• ${Object.keys(userDB.verifiedUsers).length} total verified nobles in the realm`, inline: false }
+          ])
+          .setColor(config.embedColor)
+          .setFooter({ text: config.embedFooter })
+          .setTimestamp();
+        
+        await logChannel.send({ embeds: [embed] }).catch(() => {});
+      }
+    }
+  } catch (error) {
+    logger.error(`Error syncing database with roles`, error);
+  }
 }
 
 // ==================== COMMAND REGISTRATION ====================
@@ -688,6 +852,24 @@ async function registerCommands(guild) {
             required: false
           }
         ]
+      },
+      {
+        name: 'auth-all',
+        description: 'Give the verified role to all members without it (Staff Only)',
+        type: ApplicationCommandType.ChatInput,
+        options: [
+          {
+            name: 'reason',
+            description: 'Reason for mass verification (optional)',
+            type: 3,
+            required: false
+          }
+        ]
+      },
+      {
+        name: 'deauth-all',
+        description: 'Remove the verified role from all members (Staff Only)',
+        type: ApplicationCommandType.ChatInput
       }
     ];
     
@@ -704,55 +886,64 @@ async function registerCommands(guild) {
 const commandHandlers = {
   help: async (interaction) => {
     const embed = new EmbedBuilder()
-      .setTitle('🐵 MonkeyBytes Jungle Guide')
-      .setDescription('Welcome to the coding jungle! Here are some banana-powered commands to help you navigate:')
+      .setTitle('🛡️ MonkeyBytes Royal Guide')
+      .setDescription('Welcome to the coding realm! Here are some royal commands to help thee navigate:')
       .addFields(
-        { name: '/help', value: 'Shows this jungle guide', inline: true },
-        { name: '/verify', value: 'Get your banana (verification access)', inline: true },
+        { name: '/help', value: 'Shows this royal guide', inline: true },
+        { name: '/verify', value: 'Get thy royal seal (verification access)', inline: true },
         { name: '/resources', value: 'Discover coding treasures', inline: true },
-        { name: '/roles', value: 'Learn about jungle tribes (roles)', inline: true },
-        { name: '/report', value: 'Alert monkey guards about issues', inline: true }
+        { name: '/roles', value: 'Learn about realm houses (roles)', inline: true },
+        { name: '/report', value: 'Alert royal guards about issues', inline: true }
       )
       .setColor(config.embedColor)
       .setFooter({ text: config.embedFooter })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ 
+      embeds: [embed], 
+      ephemeral: true
+    });
   },
   
   resources: async (interaction) => {
     const embed = new EmbedBuilder()
-      .setTitle('🍌 Code Jungle Treasures')
-      .setDescription('Explore these valuable coding resources in our monkey community:')
+      .setTitle('📜 Royal Court Treasures')
+      .setDescription('Explore these valuable coding resources in our noble community:')
       .addFields(
-        { name: '📚 Learning Vines', value: 'Swing by #beginner-help, #code-discussion, and #project-showcase to learn and share your work.' },
-        { name: '🛠️ Monkey Tools', value: 'Our jungle has dedicated zones for popular frameworks and tools. Explore the channel list to find your coding habitat.' },
-        { name: '📝 Banana Archives', value: 'Check the pinned messages in each channel for valuable code snippets and preserved knowledge!' },
-        { name: '🔗 Outside World Links', value: 'Visit our website for specially curated tutorials and documentation links for monkey coders of all levels.' }
+        { name: '📚 Learning Corridors', value: 'Visit #beginner-help, #code-discussion, and #project-showcase to learn and share thy work.' },
+        { name: '🛠️ Noble Tools', value: 'Our realm has dedicated chambers for popular frameworks and tools. Explore the channel list to find thy coding quarters.' },
+        { name: '📝 Royal Archives', value: 'Check the pinned messages in each channel for valuable code snippets and preserved knowledge!' },
+        { name: '🔗 Kingdom Links', value: 'Visit our website for specially curated tutorials and documentation links for noble coders of all ranks.' }
       )
       .setColor(config.embedColor)
       .setFooter({ text: config.embedFooter })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ 
+      embeds: [embed], 
+      ephemeral: true
+    });
   },
   
   roles: async (interaction) => {
     const embed = new EmbedBuilder()
-      .setTitle('🍌 Jungle Tribe Roles')
-      .setDescription('Discover the different tribes you can join in our coding jungle:')
+      .setTitle('📜 Royal Court Roles')
+      .setDescription('Discover the different houses thou can join in our coding realm:')
       .addFields(
-        { name: '🔑 Verified Monkey', value: 'Basic jungle access. Obtained by getting your banana (verification).' },
-        { name: '💻 Language Tribes', value: 'Visit the #role-selection tree to choose your programming language tribes.' },
-        { name: '🏆 Experience Levels', value: 'Show your jungle experience level in the #role-selection area.' },
-        { name: '⭐ Community Guide', value: 'Awarded to active monkeys who help others find their way through the code jungle.' },
-        { name: '🍌 Banana Master', value: 'Elite status for exceptionally helpful jungle members. Nominated by the monkey elders.' }
+        { name: '🔑 Verified Noble', value: 'Basic realm access. Obtained by receiving thy royal seal (verification).' },
+        { name: '💻 Language Houses', value: 'Visit the #role-selection chamber to choose thy programming language houses.' },
+        { name: '🏆 Experience Ranks', value: 'Show thy realm experience level in the #role-selection area.' },
+        { name: '⭐ Court Guide', value: 'Awarded to active nobles who help others find their way through the code kingdom.' },
+        { name: '📜 Royal Knight', value: 'Elite status for exceptionally helpful realm members. Nominated by the Lords.' }
       )
       .setColor(config.embedColor)
       .setFooter({ text: config.embedFooter })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ 
+      embeds: [embed], 
+      ephemeral: true
+    });
   },
   
   report: async (interaction) => {
@@ -760,11 +951,11 @@ const commandHandlers = {
     const user = interaction.user;
     
     const reportEmbed = new EmbedBuilder()
-      .setTitle('🚨 Jungle Incident Report')
-      .setDescription(`A report has been submitted by <@${user.id}>`)
+      .setTitle('🚨 Royal Incident Report')
+      .setDescription(`A report hath been submitted by <@${user.id}>`)
       .addFields(
-        { name: 'Reporting Monkey', value: `${user.username}#${user.discriminator || '0'}`, inline: true },
-        { name: 'Monkey ID', value: user.id, inline: true },
+        { name: 'Reporting Noble', value: `${user.username}#${user.discriminator || '0'}`, inline: true },
+        { name: 'Noble ID', value: user.id, inline: true },
         { name: 'Issue', value: issue }
       )
       .setColor('#FF9B21')
@@ -779,7 +970,7 @@ const commandHandlers = {
         await logChannel.send({ embeds: [reportEmbed] });
         
         await interaction.reply({ 
-          content: 'Your alert has been sent to the monkey guards. Thank you for helping keep our code jungle safe! 🐵', 
+          content: 'Thy alert hath been sent to the royal guards. We thank thee for helping keep our code realm safe! 🛡️', 
           ephemeral: true 
         });
       } else {
@@ -788,7 +979,7 @@ const commandHandlers = {
     } catch (error) {
       logger.error(`Error processing report`, error);
       await interaction.reply({ 
-        content: 'There was a glitch in the jungle. Please contact a monkey elder directly.', 
+        content: 'There was a glitch in the realm. Pray contact a Lord directly.', 
         ephemeral: true 
       });
     }
@@ -797,7 +988,7 @@ const commandHandlers = {
   restart: async (interaction) => {
     if (!isStaffMember(interaction.member)) {
       return interaction.reply({
-        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        content: 'Only Lords (staff members) can use this command! 📜',
         ephemeral: true
       });
     }
@@ -816,19 +1007,21 @@ const commandHandlers = {
     const actionRow = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
     
     const confirmEmbed = new EmbedBuilder()
-      .setTitle('⚠️ Monkey Nap Time?')
-      .setDescription(`Are you sure you want to send the monkey bot for a quick nap?\n\n**Reason:** ${reason}`)
+      .setTitle('⚠️ Restart Authentication Service?')
+      .setDescription(`Art thou certain thou wishest to restart the authentication service?\n\n**Reason:** ${reason}`)
       .setColor('#FF9B21')
-      .setFooter({ text: 'This action will briefly disconnect the monkey bot.' })
+      .setFooter({ text: 'This action shall briefly disconnect the authentication service.' })
       .setTimestamp();
     
     const message = await interaction.reply({
       embeds: [confirmEmbed],
       components: [actionRow],
-      ephemeral: true,
+      ephemeral: true
     });
     
-    const collector = message.createMessageComponentCollector({ 
+    const response = await message.fetch();
+    
+    const collector = response.createMessageComponentCollector({ 
       filter: i => i.user.id === interaction.user.id,
       time: 30000
     });
@@ -838,8 +1031,8 @@ const commandHandlers = {
         await i.update({
           embeds: [
             new EmbedBuilder()
-              .setTitle('🔄 Monkey Nap Initiated')
-              .setDescription(`Monkey bot is going for a quick nap, requested by <@${interaction.user.id}>.\n\n**Reason:** ${reason}\n\nThe monkey will wake up and be back online shortly.`)
+              .setTitle('🔄 Authentication Service Restarting')
+              .setDescription(`The authentication service is restarting, requested by <@${interaction.user.id}>.\n\n**Reason:** ${reason}\n\nThe service shall be back online shortly.`)
               .setColor('#FF0000')
               .setTimestamp()
           ],
@@ -853,8 +1046,8 @@ const commandHandlers = {
           
           if (logChannel) {
             const logEmbed = new EmbedBuilder()
-              .setTitle('🔄 Monkey Nap Initiated')
-              .setDescription(`Bot restart has been initiated by <@${interaction.user.id}>.`)
+              .setTitle('🔄 Authentication Service Restarting')
+              .setDescription(`Service restart hath been initiated by <@${interaction.user.id}>.`)
               .addFields([
                 { name: 'Reason', value: reason, inline: false },
                 { name: 'Time', value: new Date().toLocaleString(), inline: false }
@@ -885,8 +1078,8 @@ const commandHandlers = {
         await i.update({
           embeds: [
             new EmbedBuilder()
-              .setTitle('❌ Monkey Nap Cancelled')
-              .setDescription('The bot will continue swinging through the vines.')
+              .setTitle('❌ Restart Cancelled')
+              .setDescription('The authentication service shall continue running.')
               .setColor('#4CAF50')
               .setTimestamp()
           ],
@@ -899,7 +1092,7 @@ const commandHandlers = {
   stop: async (interaction) => {
     if (!isStaffMember(interaction.member)) {
       return interaction.reply({
-        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        content: 'Only Lords (staff members) can use this command! 📜',
         ephemeral: true
       });
     }
@@ -918,19 +1111,21 @@ const commandHandlers = {
     const actionRow = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
     
     const confirmEmbed = new EmbedBuilder()
-      .setTitle('⚠️ Monkey Hibernation?')
-      .setDescription(`Are you sure you want to send the monkey to sleep?\n\n**Reason:** ${reason}\n\n**⚠️ WARNING:** This will completely shut down the monkey bot until manually awakened.`)
+      .setTitle('⚠️ Stop Authentication Service?')
+      .setDescription(`Art thou certain thou wishest to stop the authentication service?\n\n**Reason:** ${reason}\n\n**⚠️ WARNING:** This shall completely shut down the service until manually restarted.`)
       .setColor('#FF0000')
-      .setFooter({ text: 'This action will disconnect the monkey until manually restarted.' })
+      .setFooter({ text: 'This action shall disconnect the service until manually restarted.' })
       .setTimestamp();
     
     const message = await interaction.reply({
       embeds: [confirmEmbed],
       components: [actionRow],
-      ephemeral: true,
+      ephemeral: true
     });
     
-    const collector = message.createMessageComponentCollector({ 
+    const response = await message.fetch();
+    
+    const collector = response.createMessageComponentCollector({ 
       filter: i => i.user.id === interaction.user.id,
       time: 30000
     });
@@ -940,8 +1135,8 @@ const commandHandlers = {
         await i.update({
           embeds: [
             new EmbedBuilder()
-              .setTitle('🛑 Monkey Hibernation Initiated')
-              .setDescription(`Monkey bot is going into hibernation, requested by <@${interaction.user.id}>.\n\n**Reason:** ${reason}\n\nThe monkey will need to be manually awakened.`)
+              .setTitle('🛑 Authentication Service Shutdown')
+              .setDescription(`The authentication service is shutting down, requested by <@${interaction.user.id}>.\n\n**Reason:** ${reason}\n\nThe service shall need to be manually restarted.`)
               .setColor('#FF0000')
               .setTimestamp()
           ],
@@ -955,8 +1150,8 @@ const commandHandlers = {
           
           if (logChannel) {
             const logEmbed = new EmbedBuilder()
-              .setTitle('🛑 Monkey Hibernation Initiated')
-              .setDescription(`Bot shutdown has been initiated by <@${interaction.user.id}>.`)
+              .setTitle('🛑 Authentication Service Shutdown')
+              .setDescription(`Service shutdown hath been initiated by <@${interaction.user.id}>.`)
               .addFields([
                 { name: 'Reason', value: reason, inline: false },
                 { name: 'Time', value: new Date().toLocaleString(), inline: false }
@@ -987,8 +1182,461 @@ const commandHandlers = {
         await i.update({
           embeds: [
             new EmbedBuilder()
-              .setTitle('❌ Hibernation Cancelled')
-              .setDescription('The monkey will stay awake and continue to swing through the vines.')
+              .setTitle('❌ Shutdown Cancelled')
+              .setDescription('The authentication service shall continue running.')
+              .setColor('#4CAF50')
+              .setTimestamp()
+          ],
+          components: []
+        });
+      }
+    });
+  },
+  
+  'auth-all': async (interaction) => {
+    if (!isStaffMember(interaction.member)) {
+      return interaction.reply({
+        content: 'Only Lords (staff members) can use this command! 📜',
+        ephemeral: true
+      });
+    }
+    
+    const reason = interaction.options.getString('reason') || 'Mass verification of all members';
+    
+    const confirmButton = new ButtonBuilder()
+      .setCustomId('confirm_auth_all')
+      .setLabel('✅ Confirm Royal Seals For All')
+      .setStyle(ButtonStyle.Danger);
+    
+    const cancelButton = new ButtonBuilder()
+      .setCustomId('cancel_auth_all')
+      .setLabel('❌ Cancel')
+      .setStyle(ButtonStyle.Secondary);
+    
+    const actionRow = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
+    
+    const confirmEmbed = new EmbedBuilder()
+      .setTitle('⚠️ Grant Royal Seals To All?')
+      .setDescription(`Art thou certain thou wishest to grant royal seals to ALL members without the verified role?\n\n**Reason:** ${reason}\n\nThis action shall grant all nobles immediate access to the realm.`)
+      .setColor('#FF9B21')
+      .setFooter({ text: 'This action affects all members without the verified role.' })
+      .setTimestamp();
+    
+    const message = await interaction.reply({
+      embeds: [confirmEmbed],
+      components: [actionRow],
+      ephemeral: true
+    });
+    
+    const response = await message.fetch();
+    
+    const collector = response.createMessageComponentCollector({ 
+      filter: i => i.user.id === interaction.user.id,
+      time: 30000
+    });
+    
+    collector.on('collect', async i => {
+      if (i.customId === 'confirm_auth_all') {
+        await i.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('⏳ Granting Royal Seals...')
+              .setDescription(`The authentication service is verifying all members without the royal seal. This may take some time.\n\n**Reason:** ${reason}`)
+              .setColor('#FF9B21')
+              .setTimestamp()
+          ],
+          components: []
+        });
+        
+        try {
+          const guild = client.guilds.cache.get(config.guildId);
+          if (!guild) {
+            return await i.editReply({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle('❌ Error')
+                  .setDescription('Could not find the guild.')
+                  .setColor('#FF0000')
+                  .setTimestamp()
+              ]
+            });
+          }
+          
+          // Fetch all members - this might take time for large servers
+          await guild.members.fetch();
+          
+          const membersWithoutRole = guild.members.cache.filter(member => 
+            !member.user.bot && !member.roles.cache.has(config.verifiedRoleId)
+          );
+          
+          if (membersWithoutRole.size === 0) {
+            return await i.editReply({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle('✅ No Action Needed')
+                  .setDescription('All nobles in the realm already have their royal seals!')
+                  .setColor('#4CAF50')
+                  .setTimestamp()
+              ]
+            });
+          }
+          
+          let successCount = 0;
+          let failCount = 0;
+          const startTime = Date.now();
+          
+          // Process members in batches to avoid rate limits
+          for (const [memberId, member] of membersWithoutRole) {
+            try {
+              // Add role
+              await member.roles.add(config.verifiedRoleId);
+              
+              
+              // Update database
+              if (!userDB.verifiedUsers[memberId]) {
+                userDB.verifiedUsers[memberId] = {
+                  id: memberId,
+                  username: member.user.username,
+                  discriminator: member.user.discriminator || '0',
+                  globalName: member.user.globalName || member.user.username,
+                  avatar: member.user.avatar,
+                  verifiedAt: new Date().toISOString(),
+                  verificationIP: 'mass-verification',
+                  vassalage: 1,
+                  tier: "knight",
+                  manuallyVerifiedBy: interaction.user.id,
+                  verificationReason: reason
+                };
+                
+                // Update stats
+                userDB.statistics.totalVerified++;
+                const today = new Date().toISOString().split('T')[0];
+                userDB.statistics.verificationsByDay[today] = 
+                  (userDB.statistics.verificationsByDay[today] || 0) + 1;
+              }
+              
+              // If user was deauthorized, remove from deauth list
+              if (userDB.deauthorizedUsers && userDB.deauthorizedUsers[memberId]) {
+                delete userDB.deauthorizedUsers[memberId];
+              }
+              
+              successCount++;
+              
+              // Small delay to avoid rate limits
+              if (successCount % 10 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Provide updates for long-running operations
+                if (successCount + failCount < membersWithoutRole.size) {
+                  await i.editReply({
+                    embeds: [
+                      new EmbedBuilder()
+                        .setTitle('⏳ Granting Royal Seals...')
+                        .setDescription(`Progress: ${successCount + failCount}/${membersWithoutRole.size} nobles processed.`)
+                        .setColor('#FF9B21')
+                        .setTimestamp()
+                    ]
+                  }).catch(() => {});
+                }
+              }
+            } catch (memberError) {
+              logger.error(`Error granting role to ${memberId}`, memberError);
+              failCount++;
+            }
+          }
+          
+          // Save database
+          saveUserDB();
+          
+          // Log to the log channel
+          const logChannel = guild.channels.cache.get(config.logChannelId);
+          if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+              .setTitle('📜 Royal Seal Status Update')
+              .setDescription(`${successCount} members have been granted royal seals in a mass verification operation.`)
+              .addFields([
+                { name: 'Verification Details', value: `• ${successCount} nobles received verification\n• ${failCount} verification attempts failed\n• Database has been updated for all members`, inline: false },
+                { name: 'Reason Provided', value: reason, inline: false },
+                { name: 'Server Status', value: `Currently ${Object.keys(userDB.verifiedUsers).length} verified nobles in the realm`, inline: false },
+                { name: 'Operation Info', value: `• Executed by: <@${interaction.user.id}>\n• Time taken: ${((Date.now() - startTime) / 1000).toFixed(2)} seconds\n• Timestamp: ${new Date().toLocaleString()}`, inline: false }
+              ])
+              .setColor(config.embedColor)
+              .setFooter({ text: config.embedFooter })
+              .setTimestamp();
+            
+            await logChannel.send({ embeds: [logEmbed] });
+          }
+          
+          // Also log to the approval channel
+          const approvalChannel = guild.channels.cache.get(config.approvalChannelId);
+          if (approvalChannel) {
+            const approvalEmbed = new EmbedBuilder()
+              .setTitle('⚜️ Mass Verification Complete')
+              .setDescription(`${successCount} nobles have been granted royal seals across the realm.`)
+              .addFields([
+                { name: 'Verification Summary', value: `• ${successCount} members verified successfully\n• ${failCount} verification attempts failed\n• All verified members now have the <@&${config.verifiedRoleId}> role\n• Verification database has been updated`, inline: false },
+                { name: 'Reason Provided', value: reason, inline: false },
+                { name: 'Server Impact', value: `The realm now has ${Object.keys(userDB.verifiedUsers).length} verified nobles with full access.`, inline: false },
+                { name: 'Additional Information', value: `This action was authorized by <@${interaction.user.id}> at ${new Date().toLocaleString()}.`, inline: false }
+              ])
+              .setColor(config.embedColor)
+              .setFooter({ text: 'This was a bulk operation - no DMs were sent' })
+              .setTimestamp();
+            
+            await approvalChannel.send({ embeds: [approvalEmbed] });
+          }
+          
+          // Final update to user
+          await i.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle('✅ Royal Seals Granted')
+                .setDescription(`Successfully granted royal seals to ${successCount} nobles!${failCount > 0 ? `\n\nFailed to process ${failCount} nobles.` : ''}`)
+                .setColor('#4CAF50')
+                .setTimestamp()
+            ]
+          });
+          
+        } catch (error) {
+          logger.error(`Error during auth-all operation`, error);
+          
+          await i.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`There was an error while granting royal seals: ${error.message}`)
+                .setColor('#FF0000')
+                .setTimestamp()
+            ]
+          });
+        }
+      } else if (i.customId === 'cancel_auth_all') {
+        await i.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('❌ Operation Cancelled')
+              .setDescription('The mass granting of royal seals hath been cancelled.')
+              .setColor('#4CAF50')
+              .setTimestamp()
+          ],
+          components: []
+        });
+      }
+    });
+  },
+  
+  'deauth-all': async (interaction) => {
+    if (!isStaffMember(interaction.member)) {
+      return interaction.reply({
+        content: 'Only Lords (staff members) can use this command! 📜',
+        ephemeral: true
+      });
+    }
+    
+    const confirmButton = new ButtonBuilder()
+      .setCustomId('confirm_deauth_all')
+      .setLabel('✅ Confirm Remove All Seals')
+      .setStyle(ButtonStyle.Danger);
+    
+    const cancelButton = new ButtonBuilder()
+      .setCustomId('cancel_deauth_all')
+      .setLabel('❌ Cancel')
+      .setStyle(ButtonStyle.Secondary);
+    
+    const actionRow = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
+    
+    const confirmEmbed = new EmbedBuilder()
+      .setTitle('⚠️ REMOVE ALL ROYAL SEALS?')
+      .setDescription(`Art thou ABSOLUTELY CERTAIN thou wishest to REMOVE ALL royal seals from EVERY member?\n\n⚠️ **WARNING:** This is a DESTRUCTIVE ACTION that will REMOVE ACCESS from ALL verified members!\n\n⚠️ **WARNING:** This cannot be easily undone!`)
+      .setColor('#FF0000')
+      .setFooter({ text: 'This action affects ALL members with the verified role!' })
+      .setTimestamp();
+    
+    const message = await interaction.reply({
+      embeds: [confirmEmbed],
+      components: [actionRow],
+      ephemeral: true
+    });
+    
+    const response = await message.fetch();
+    
+    const collector = response.createMessageComponentCollector({ 
+      filter: i => i.user.id === interaction.user.id,
+      time: 30000
+    });
+    
+    collector.on('collect', async i => {
+      if (i.customId === 'confirm_deauth_all') {
+        await i.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('⏳ Removing Royal Seals...')
+              .setDescription(`The authentication service is removing all royal seals. This may take some time.`)
+              .setColor('#FF0000')
+              .setTimestamp()
+          ],
+          components: []
+        });
+        
+        try {
+          const guild = client.guilds.cache.get(config.guildId);
+          if (!guild) {
+            return await i.editReply({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle('❌ Error')
+                  .setDescription('Could not find the guild.')
+                  .setColor('#FF0000')
+                  .setTimestamp()
+              ]
+            });
+          }
+          
+          // Fetch all members - this might take time for large servers
+          await guild.members.fetch();
+          
+          const membersWithRole = guild.members.cache.filter(member => 
+            !member.user.bot && member.roles.cache.has(config.verifiedRoleId)
+          );
+          
+          if (membersWithRole.size === 0) {
+            return await i.editReply({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle('✅ No Action Needed')
+                  .setDescription('No nobles in the realm have royal seals!')
+                  .setColor('#4CAF50')
+                  .setTimestamp()
+              ]
+            });
+          }
+          
+          let successCount = 0;
+          let failCount = 0;
+          const startTime = Date.now();
+          const reason = `Mass deauthorization by ${interaction.user.username} on ${new Date().toLocaleString()}`;
+          
+          // Process members in batches to avoid rate limits
+          for (const [memberId, member] of membersWithRole) {
+            try {
+              // Remove role
+              await member.roles.remove(config.verifiedRoleId);
+              
+              // Update database
+              if (userDB.verifiedUsers[memberId]) {
+                const userData = userDB.verifiedUsers[memberId];
+                
+                // Move to deauthorized list
+                userDB.deauthorizedUsers[memberId] = {
+                  ...userData,
+                  deauthorizedAt: new Date().toISOString(),
+                  deauthorizedBy: interaction.user.id,
+                  deauthorizationReason: reason
+                };
+                
+                // Remove from verified list
+                delete userDB.verifiedUsers[memberId];
+                
+                // Update stats
+                userDB.statistics.totalDeauths++;
+              }
+              
+              successCount++;
+              
+              // Small delay to avoid rate limits
+              if (successCount % 10 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Provide updates for long-running operations
+                if (successCount + failCount < membersWithRole.size) {
+                  await i.editReply({
+                    embeds: [
+                      new EmbedBuilder()
+                        .setTitle('⏳ Removing Royal Seals...')
+                        .setDescription(`Progress: ${successCount + failCount}/${membersWithRole.size} nobles processed.`)
+                        .setColor('#FF0000')
+                        .setTimestamp()
+                    ]
+                  }).catch(() => {});
+                }
+              }
+            } catch (memberError) {
+              logger.error(`Error removing role from ${memberId}`, memberError);
+              failCount++;
+            }
+          }
+          
+          // Save database
+          saveUserDB();
+          
+          // Log to the log channel
+          const logChannel = guild.channels.cache.get(config.logChannelId);
+          if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+              .setTitle('📜 Royal Seal Status Update')
+              .setDescription(`${successCount} members have had their royal seals removed in a mass deauthorization operation.`)
+              .addFields([
+                { name: 'Deauthorization Details', value: `• ${successCount} nobles lost verification\n• ${failCount} deauthorization attempts failed\n• Database has been updated for all members`, inline: false },
+                { name: 'Server Status', value: `Currently ${Object.keys(userDB.verifiedUsers).length} verified nobles remain in the realm`, inline: false },
+                { name: 'Reason Provided', value: reason, inline: false },
+                { name: 'Operation Info', value: `• Executed by: <@${interaction.user.id}>\n• Time taken: ${((Date.now() - startTime) / 1000).toFixed(2)} seconds\n• Timestamp: ${new Date().toLocaleString()}`, inline: false }
+              ])
+              .setColor('#FF0000')
+              .setFooter({ text: config.embedFooter })
+              .setTimestamp();
+            
+            await logChannel.send({ embeds: [logEmbed] });
+          }
+          
+          // Also log to the approval channel
+          const approvalChannel = guild.channels.cache.get(config.approvalChannelId);
+          if (approvalChannel) {
+            const approvalEmbed = new EmbedBuilder()
+              .setTitle('⚜️ Mass Deauthorization Complete')
+              .setDescription(`${successCount} nobles have had their royal seals revoked across the realm.`)
+              .addFields([
+                { name: 'Deauthorization Summary', value: `• ${successCount} members deauthorized successfully\n• ${failCount} deauthorization attempts failed\n• All affected members have lost the <@&${config.verifiedRoleId}> role\n• Verification database has been updated`, inline: false },
+                { name: 'Server Impact', value: `The realm now has ${Object.keys(userDB.verifiedUsers).length} verified nobles with full access.`, inline: false },
+                { name: 'Reason Provided', value: reason, inline: false },
+                { name: 'Additional Information', value: `This action was authorized at ${new Date().toLocaleString()}.`, inline: false }
+              ])
+              .setColor('#FF0000')
+              .setFooter({ text: 'This was a bulk operation - no DMs were sent' })
+              .setTimestamp();
+            
+            await approvalChannel.send({ embeds: [approvalEmbed] });
+          }
+          
+          // Final update to user
+          await i.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle('✅ Royal Seals Removed')
+                .setDescription(`Successfully removed royal seals from ${successCount} nobles!${failCount > 0 ? `\n\nFailed to process ${failCount} nobles.` : ''}`)
+                .setColor('#4CAF50')
+                .setTimestamp()
+            ]
+          });
+          
+        } catch (error) {
+          logger.error(`Error during deauth-all operation`, error);
+          
+          await i.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`There was an error while removing royal seals: ${error.message}`)
+                .setColor('#FF0000')
+                .setTimestamp()
+            ]
+          });
+        }
+      } else if (i.customId === 'cancel_deauth_all') {
+        await i.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('❌ Operation Cancelled')
+              .setDescription('The mass removal of royal seals hath been cancelled.')
               .setColor('#4CAF50')
               .setTimestamp()
           ],
@@ -1005,7 +1653,7 @@ const contextMenuHandlers = {
   verifyMember: async (interaction) => {
     if (!isStaffMember(interaction.member)) {
       return interaction.reply({ 
-        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        content: 'Only Lords (staff members) can use this command! 📜',
         ephemeral: true
       });
     }
@@ -1017,14 +1665,14 @@ const contextMenuHandlers = {
       
       if (!member) {
         return interaction.reply({ 
-          content: `❌ Monkey <@${user.id}> is not in our jungle.`,
+          content: `❌ Noble <@${user.id}> is not in our realm.`,
           ephemeral: true
         });
       }
       
       if (userDB.verifiedUsers[user.id]) {
         return interaction.reply({ 
-          content: `❌ Monkey <@${user.id}> already has a banana!`,
+          content: `❌ Noble <@${user.id}> already hath a royal seal!`,
           ephemeral: true
         });
       }
@@ -1041,8 +1689,8 @@ const contextMenuHandlers = {
         refreshToken: null,
         verifiedAt: timestamp,
         verificationIP: 'manual-verification',
-        bananaCount: 1,
-        tier: "banana",
+        vassalage: 1,
+        tier: "knight",
         manuallyVerifiedBy: interaction.user.id
       };
       
@@ -1060,11 +1708,11 @@ const contextMenuHandlers = {
       const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
       if (logChannel) {
         const embed = new EmbedBuilder()
-          .setTitle('🍌 Monkey Manually Added')
-          .setDescription(`<@${user.id}> has been manually given a banana by <@${interaction.user.id}>!`)
+          .setTitle('📜 Noble Manually Added')
+          .setDescription(`<@${user.id}> hath been manually given a royal seal by <@${interaction.user.id}>!`)
           .addFields([
-            { name: 'Monkey Name', value: `${user.username}#${user.discriminator}`, inline: true },
-            { name: 'Monkey ID', value: user.id, inline: true },
+            { name: 'Noble Name', value: `${user.username}#${user.discriminator}`, inline: true },
+            { name: 'Noble ID', value: user.id, inline: true },
             { name: 'Added By', value: `<@${interaction.user.id}>`, inline: true }
           ])
           .setColor(config.embedColor)
@@ -1078,7 +1726,7 @@ const contextMenuHandlers = {
         await member.send({
           embeds: [
             new EmbedBuilder()
-              .setTitle('🎉 Welcome to the MonkeyBytes Jungle!')
+              .setTitle('🎉 Welcome to the MonkeyBytes Realm!')
               .setDescription(config.welcomeMessage)
               .setColor(config.embedColor)
               .setFooter({ text: config.embedFooter })
@@ -1089,13 +1737,13 @@ const contextMenuHandlers = {
       }
       
       await interaction.reply({ 
-        content: `✅ Successfully given a banana to <@${user.id}> and granted jungle access!`,
+        content: `✅ Successfully given a royal seal to <@${user.id}> and granted realm access!`,
         ephemeral: true
       });
     } catch (error) {
       logger.error(`Error during manual verification for ${user.id}`, error);
       await interaction.reply({
-        content: `❌ Error giving banana: ${error.message}`,
+        content: `❌ Error giving royal seal: ${error.message}`,
         ephemeral: true
       });
     }
@@ -1105,7 +1753,7 @@ const contextMenuHandlers = {
   deauthorizeMember: async (interaction) => {
     if (!isStaffMember(interaction.member)) {
       return interaction.reply({ 
-        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        content: 'Only Lords (staff members) can use this command! 📜',
         ephemeral: true
       });
     }
@@ -1114,13 +1762,13 @@ const contextMenuHandlers = {
     
     const modal = new ModalBuilder()
       .setCustomId(`deauth_modal_${user.id}`)
-      .setTitle(`Take ${user.username}'s Banana`);
+      .setTitle(`Take ${user.username}'s Royal Seal`);
 
     const reasonInput = new TextInputBuilder()
       .setCustomId('deauth_reason')
-      .setLabel('Reason for taking their banana')
+      .setLabel('Reason for taking their royal seal')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Please provide a reason for removing jungle access')
+      .setPlaceholder('Pray provide a reason for removing realm access')
       .setRequired(true)
       .setMaxLength(1000);
 
@@ -1134,7 +1782,7 @@ const contextMenuHandlers = {
   viewUserStats: async (interaction) => {
     if (!isStaffMember(interaction.member)) {
       return interaction.reply({ 
-        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        content: 'Only Lords (staff members) can use this command! 📜',
         ephemeral: true
       });
     }
@@ -1146,7 +1794,7 @@ const contextMenuHandlers = {
       
       if (!member) {
         return interaction.reply({
-          content: `❌ Monkey <@${user.id}> is not in our jungle.`,
+          content: `❌ Noble <@${user.id}> is not in our realm.`,
           ephemeral: true
         });
       }
@@ -1162,22 +1810,22 @@ const contextMenuHandlers = {
         : 'N/A';
       
       const embed = new EmbedBuilder()
-        .setTitle(`📊 Monkey Stats: ${user.username}`)
-        .setDescription(`Information about <@${user.id}> in our jungle`)
+        .setTitle(`📊 Noble Stats: ${user.username}`)
+        .setDescription(`Information about <@${user.id}> in our realm`)
         .addFields([
-          { name: 'Monkey ID', value: user.id, inline: true },
-          { name: 'Joined Jungle', value: joinDate, inline: true },
-          { name: 'Banana Status', value: isVerified 
-            ? '✅ Has Banana'
+          { name: 'Noble ID', value: user.id, inline: true },
+          { name: 'Joined Realm', value: joinDate, inline: true },
+          { name: 'Royal Seal Status', value: isVerified 
+            ? '✅ Has Royal Seal'
             : isPending 
-                ? '⏳ Awaiting Banana'
+                ? '⏳ Awaiting Royal Seal'
                 : wasDeauthed 
-                    ? '❌ Banana Taken'
-                    : '❔ No Banana',
+                    ? '❌ Royal Seal Revoked'
+                    : '❔ No Royal Seal',
             inline: true
           },
-          { name: 'Banana Given', value: verificationDate, inline: true },
-          { name: 'Jungle Markings', value: member.roles.cache.size > 1 
+          { name: 'Royal Seal Given', value: verificationDate, inline: true },
+          { name: 'Royal Markings', value: member.roles.cache.size > 1 
             ? member.roles.cache
                 .filter(role => role.id !== interaction.guild.id)
                 .map(role => `<@&${role.id}>`)
@@ -1192,9 +1840,9 @@ const contextMenuHandlers = {
       
       if (wasDeauthed) {
         embed.addFields([
-          { name: 'Banana Removal Reason', value: wasDeauthed.deauthorizationReason || 'No reason provided' },
-          { name: 'Banana Taken By', value: wasDeauthed.deauthorizedBy ? `<@${wasDeauthed.deauthorizedBy}>` : 'Unknown' },
-          { name: 'Banana Taken On', value: wasDeauthed.deauthorizedAt ? new Date(wasDeauthed.deauthorizedAt).toLocaleString() : 'Unknown' }
+          { name: 'Royal Seal Removal Reason', value: wasDeauthed.deauthorizationReason || 'No reason provided' },
+          { name: 'Royal Seal Taken By', value: wasDeauthed.deauthorizedBy ? `<@${wasDeauthed.deauthorizedBy}>` : 'Unknown' },
+          { name: 'Royal Seal Taken On', value: wasDeauthed.deauthorizedAt ? new Date(wasDeauthed.deauthorizedAt).toLocaleString() : 'Unknown' }
         ]);
       }
       
@@ -1205,7 +1853,7 @@ const contextMenuHandlers = {
     } catch (error) {
       logger.error(`Error getting user stats`, error);
       await interaction.reply({
-        content: `❌ Error retrieving monkey stats: ${error.message}`,
+        content: `❌ Error retrieving noble stats: ${error.message}`,
         ephemeral: true
       });
     }
@@ -1215,7 +1863,7 @@ const contextMenuHandlers = {
   markRuleViolation: async (interaction) => {
     if (!isStaffMember(interaction.member)) {
       return interaction.reply({ 
-        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        content: 'Only Lords (staff members) can use this command! 📜',
         ephemeral: true
       });
     }
@@ -1224,18 +1872,18 @@ const contextMenuHandlers = {
     
     const modal = new ModalBuilder()
       .setCustomId(`violation_modal_${message.id}`)
-      .setTitle('Mark as Jungle Rule Violation');
+      .setTitle('Mark as Royal Law Violation');
       
     const violationInput = new TextInputBuilder()
       .setCustomId('violation_type')
-      .setLabel('Jungle Rule Violation Type')
+      .setLabel('Royal Law Violation Type')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g. Monkey Business, Snake Talk, Loud Howling')
+      .setPlaceholder('e.g. Treason, Insolence, Discourtesy')
       .setRequired(true);
       
     const notesInput = new TextInputBuilder()
       .setCustomId('violation_notes')
-      .setLabel('Jungle Notes')
+      .setLabel('Royal Notes')
       .setStyle(TextInputStyle.Paragraph)
       .setPlaceholder('Any additional notes about this violation')
       .setRequired(false);
@@ -1251,7 +1899,7 @@ const contextMenuHandlers = {
   addToResources: async (interaction) => {
     if (!isStaffMember(interaction.member)) {
       return interaction.reply({ 
-        content: 'Only monkey elders (staff members) can use this command! 🍌',
+        content: 'Only Lords (staff members) can use this command! 📜',
         ephemeral: true
       });
     }
@@ -1260,20 +1908,20 @@ const contextMenuHandlers = {
     
     const modal = new ModalBuilder()
       .setCustomId(`resource_modal_${message.id}`)
-      .setTitle('Add to Jungle Knowledge');
+      .setTitle('Add to Royal Knowledge');
       
     const categoryInput = new TextInputBuilder()
       .setCustomId('resource_category')
       .setLabel('Knowledge Category')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g. Banana Coding, Vine Swinging, Tree Climbing')
+      .setPlaceholder('e.g. Royal Coding, Quill Mastery, Parchment Works')
       .setRequired(true);
       
     const descriptionInput = new TextInputBuilder()
       .setCustomId('resource_description')
       .setLabel('Knowledge Description')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('A brief description of this jungle knowledge')
+      .setPlaceholder('A brief description of this royal knowledge')
       .setRequired(true);
       
     const categoryRow = new ActionRowBuilder().addComponents(categoryInput);
@@ -1293,7 +1941,7 @@ async function handleModalSubmit(interaction) {
     
     if (!reason || reason.trim() === '') {
       return interaction.reply({ 
-        content: `❌ You must provide a reason for taking away this monkey's banana.`,
+        content: `❌ Thou must provide a reason for taking away this noble's royal seal.`,
         ephemeral: true
       });
     }
@@ -1302,7 +1950,7 @@ async function handleModalSubmit(interaction) {
     
     if (!userDB || !userDB.verifiedUsers || !userDB.verifiedUsers[userId]) {
       return interaction.editReply({ 
-        content: `❌ Monkey <@${userId}> doesn't have a banana.`
+        content: `❌ Noble <@${userId}> doth not have a royal seal.`
       });
     }
     
@@ -1333,8 +1981,8 @@ async function handleModalSubmit(interaction) {
         try {
           const authUrl = `${config.serverUrl}/auth`;
           const embed = new EmbedBuilder()
-            .setTitle('🐵 MonkeyBytes Jungle Access Update')
-            .setDescription(`Your banana has been taken by a monkey elder, revoking your access to the MonkeyBytes jungle.\n\n**Reason:** ${reason}\n\nTo regain access to our coding jungle, please [click here to request a new banana](${authUrl}). After you authenticate, a monkey elder will review your request.`)
+            .setTitle('🛡️ MonkeyBytes Realm Access Update')
+            .setDescription(`Thy royal seal hath been taken by a Lord, revoking thy access to the MonkeyBytes realm.\n\n**Reason:** ${reason}\n\nTo regain access to our coding kingdom, pray [click here to request a new royal seal](${authUrl}). After thou authenticateth, a Lord shall review thy request.`)
             .setColor('#FF9B21')
             .setFooter({ text: config.embedFooter })
             .setTimestamp();
@@ -1348,10 +1996,10 @@ async function handleModalSubmit(interaction) {
       const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
       if (logChannel) {
         const embed = new EmbedBuilder()
-          .setTitle('🍌 Banana Confiscated')
-          .setDescription(`<@${userId}>'s banana has been taken by <@${interaction.user.id}>!`)
+          .setTitle('📜 Royal Seal Confiscated')
+          .setDescription(`<@${userId}>'s royal seal hath been taken by <@${interaction.user.id}>!`)
           .addFields(
-            { name: 'Monkey ID', value: userId, inline: true },
+            { name: 'Noble ID', value: userId, inline: true },
             { name: 'Action By', value: `<@${interaction.user.id}>`, inline: true },
             { name: 'Reason', value: reason, inline: false }
           )
@@ -1363,13 +2011,13 @@ async function handleModalSubmit(interaction) {
       }
       
       await interaction.editReply({ 
-        content: `✅ Successfully taken <@${userId}>'s banana with reason: "${reason}"`
+        content: `✅ Successfully taken <@${userId}>'s royal seal with reason: "${reason}"`
       });
     } catch (error) {
       logger.error(`Error during deauthorization for ${userId}`, error);
       
       await interaction.editReply({ 
-        content: `❌ Error taking banana: ${error.message}`
+        content: `❌ Error taking royal seal: ${error.message}`
       });
     }
   }
@@ -1382,7 +2030,7 @@ async function handleModalSubmit(interaction) {
     
     if (!violationType || violationType.trim() === '') {
       return interaction.reply({
-        content: `❌ You must provide a violation type.`,
+        content: `❌ Thou must provide a violation type.`,
         ephemeral: true
       });
     }
@@ -1395,17 +2043,17 @@ async function handleModalSubmit(interaction) {
       
       if (!message) {
         return interaction.editReply({
-          content: '❌ Error: Message not found. It may have swung away.'
+          content: '❌ Error: Message not found. It may have been removed from the royal records.'
         });
       }
       
       const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
       if (logChannel) {
         const embed = new EmbedBuilder()
-          .setTitle('⚠️ Jungle Rules Violation')
-          .setDescription(`A message has been flagged as breaking jungle rules by <@${interaction.user.id}>`)
+          .setTitle('⚠️ Royal Law Violation')
+          .setDescription(`A message hath been flagged as breaking royal laws by <@${interaction.user.id}>`)
           .addFields(
-            { name: 'Monkey', value: `<@${message.author.id}>`, inline: true },
+            { name: 'Noble', value: `<@${message.author.id}>`, inline: true },
             { name: 'Location', value: `<#${channel.id}>`, inline: true },
             { name: 'Violation Type', value: violationType, inline: true },
             { name: 'Notes', value: notes, inline: false },
@@ -1420,14 +2068,14 @@ async function handleModalSubmit(interaction) {
       }
       
       await interaction.editReply({
-        content: `✅ Message marked as "${violationType}" jungle rule violation. Monkey guards have been notified.`
+        content: `✅ Message marked as "${violationType}" royal law violation. Royal guards have been notified.`
       });
       
     } catch (error) {
       logger.error(`Error processing rule violation`, error);
       
       await interaction.editReply({
-        content: `❌ Error processing jungle violation: ${error.message}`
+        content: `❌ Error processing royal violation: ${error.message}`
       });
     }
   }
@@ -1440,7 +2088,7 @@ async function handleModalSubmit(interaction) {
     
     if (!category || category.trim() === '' || !description || description.trim() === '') {
       return interaction.reply({
-        content: `❌ You must provide both a category and description for jungle knowledge.`,
+        content: `❌ Thou must provide both a category and description for royal knowledge.`,
         ephemeral: true
       });
     }
@@ -1453,19 +2101,19 @@ async function handleModalSubmit(interaction) {
       
       if (!message) {
         return interaction.editReply({
-          content: '❌ Error: Message not found. It may have swung away.'
+          content: '❌ Error: Message not found. It may have been removed from the royal records.'
         });
       }
       
       const resourcesChannel = interaction.guild.channels.cache.get(config.resourcesChannelId);
       if (!resourcesChannel) {
         return interaction.editReply({
-          content: '❌ Banana archive not found. Please set up a knowledge storage area first.'
+          content: '❌ Royal archive not found. Please set up a knowledge storage chamber first.'
         });
       }
       
       const embed = new EmbedBuilder()
-        .setTitle(`${category} Jungle Resource`)
+        .setTitle(`${category} Royal Resource`)
         .setDescription(description)
         .addFields(
           { name: 'Submitted By', value: `<@${message.author.id}>`, inline: true },
@@ -1491,8 +2139,8 @@ async function handleModalSubmit(interaction) {
       const logChannel = interaction.guild.channels.cache.get(config.logChannelId);
       if (logChannel) {
         const logEmbed = new EmbedBuilder()
-          .setTitle('📚 Jungle Knowledge Added')
-          .setDescription(`A new resource has been added to the archives by <@${interaction.user.id}>`)
+          .setTitle('📚 Royal Knowledge Added')
+          .setDescription(`A new resource hath been added to the archives by <@${interaction.user.id}>`)
           .addFields(
             { name: 'Category', value: category, inline: true },
             { name: 'Added By', value: `<@${interaction.user.id}>`, inline: true },
@@ -1507,14 +2155,14 @@ async function handleModalSubmit(interaction) {
       }
       
       await interaction.editReply({
-        content: `✅ Knowledge successfully added to the banana archives under category "${category}".`
+        content: `✅ Knowledge successfully added to the royal archives under category "${category}".`
       });
       
     } catch (error) {
       logger.error(`Error adding to resources`, error);
       
       await interaction.editReply({
-        content: `❌ Error adding to jungle knowledge: ${error.message}`
+        content: `❌ Error adding to royal knowledge: ${error.message}`
       });
     }
   }
@@ -1742,13 +2390,13 @@ async function sendUptimeUpdate() {
     if (!uptimeLogsChannel) return;
     
     const uptimeEmbed = new EmbedBuilder()
-      .setTitle('🕒 Jungle Bot Status')
+      .setTitle('🕒 Authentication Service Status')
       .addFields([
-        { name: 'Bot Status', value: 'Swinging through vines', inline: true },
-        { name: 'Time in Jungle', value: uptimeString, inline: true },
-        { name: 'Banana Storage', value: `${memoryUsage} MB`, inline: true },
-        { name: 'Jungle Connection', value: `${client.ws.ping}ms`, inline: true },
-        { name: 'Jungle Time', value: `${uptimePercentage}%`, inline: true }
+        { name: 'Service State', value: 'Online & Operational', inline: true },
+        { name: 'Current Runtime', value: uptimeString, inline: true },
+        { name: 'Memory Usage', value: `${memoryUsage} MB`, inline: true },
+        { name: 'Discord Latency', value: `${client.ws.ping}ms`, inline: true },
+        { name: 'Service Uptime', value: `${uptimePercentage}%`, inline: true }
       ])
       .setColor(config.embedColor)
       .setFooter({ text: config.embedFooter })
@@ -1767,37 +2415,37 @@ async function sendHeartbeat() {
     const pendingCount = Object.keys(userDB.pendingApprovals || {}).length;
     
     const heartbeatEmbed = new EmbedBuilder()
-      .setTitle("🍌 MonkeyBytes Jungle Status")
+      .setTitle("🔐 OAuth Authentication Status")
       .setColor(config.embedColor)
       .addFields([
         {
-          name: "Monkey Bot Status",
-          value: `Swinging through vines | ${client.user.tag}`,
+          name: "Auth Service Status",
+          value: `Online | ${client.user.tag}`,
           inline: true
         },
         {
-          name: "Banana Storage",
+          name: "Memory Usage",
           value: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
           inline: true
         },
         {
-          name: "Monkeys with Bananas",
+          name: "Verified Nobles",
           value: currentVerifiedCount.toString(),
           inline: true
         },
         {
-          name: "Bananaless Monkeys",
+          name: "Deauthorized Nobles",
           value: currentDeauthCount.toString(),
           inline: true
         },
         {
-          name: "Pending Banana Requests",
+          name: "Pending Approvals",
           value: pendingCount.toString(),
           inline: true
         },
         {
-          name: "Jungle Stats",
-          value: `✅ ${userDB.statistics.totalVerified} bananas given | ❌ ${userDB.statistics.totalDeauths} bananas taken`,
+          name: "Auth Statistics",
+          value: `✅ ${userDB.statistics.totalVerified} nobles verified | ❌ ${userDB.statistics.totalDeauths} nobles deauthorized`,
           inline: false
         }
       ])
@@ -1837,6 +2485,57 @@ client.once('ready', async () => {
   // Set bot presence
   setRotatingPresence();
 
+  // Check for and update verification message ONLY during startup
+  try {
+    const guild = client.guilds.cache.get(config.guildId);
+    if (guild) {
+      const verificationChannel = guild.channels.cache.get(config.verificationChannelId);
+      if (verificationChannel) {
+        // Check if there's an existing verification message
+        try {
+          const messages = await verificationChannel.messages.fetch({ limit: 10 });
+          const existingMessage = messages.find(msg => 
+            msg.author.id === client.user.id && 
+            msg.embeds.length > 0 && 
+            msg.embeds[0].title.includes('Verification')
+          );
+          
+          const verifyButton = new ButtonBuilder()
+            .setCustomId('verify_button')
+            .setLabel('📜 Receive Thy Royal Seal')
+            .setStyle(ButtonStyle.Primary);
+
+          const row = new ActionRowBuilder().addComponents(verifyButton);
+
+          const embed = new EmbedBuilder()
+            .setTitle('🛡️ MonkeyBytes Verification')
+            .setDescription(config.verificationMessage)
+            .setColor(config.embedColor)
+            .setFooter({ text: config.embedFooter })
+            .setTimestamp();
+          
+          if (existingMessage) {
+            // Update existing message
+            await existingMessage.edit({ embeds: [embed], components: [row] })
+              .then(() => logger.success("Updated existing verification message during startup"))
+              .catch(err => logger.error("Failed to update verification message", err));
+          } else {
+            // ONLY during startup/restart: create a new verification message if none exists
+            logger.info("No verification message found during startup, creating a new one");
+            await sendVerificationMessage(verificationChannel);
+          }
+        } catch (fetchError) {
+          logger.warn("Error fetching messages during startup, creating a verification message", fetchError);
+          await sendVerificationMessage(verificationChannel);
+        }
+      } else {
+        logger.warn(`Verification channel not found! Please create a channel with ID: ${config.verificationChannelId}`);
+      }
+    }
+  } catch (error) {
+    logger.error("Error handling verification message during startup", error);
+  }
+
   const guild = client.guilds.cache.get(config.guildId);
   if (guild) {
     await registerCommands(guild);
@@ -1856,9 +2555,9 @@ client.once('ready', async () => {
       
       if (downtimeCheck.detected) {
         fields.push(
-          { name: 'Nap Duration', value: `${downtimeCheck.duration} minutes`, inline: true },
-          { name: 'Nap Started', value: downtimeCheck.start.toLocaleString(), inline: true },
-          { name: 'Woke Up', value: new Date().toLocaleString(), inline: true }
+          { name: 'Downtime Duration', value: `${downtimeCheck.duration} minutes`, inline: true },
+          { name: 'Downtime Started', value: downtimeCheck.start.toLocaleString(), inline: true },
+          { name: 'Service Resumed', value: new Date().toLocaleString(), inline: true }
         );
       }
       
@@ -1866,10 +2565,10 @@ client.once('ready', async () => {
       fields.push({ name: 'Overall Uptime', value: `${uptimePercentage}%`, inline: true });
       
       const uptimeEmbed = new EmbedBuilder()
-        .setTitle(downtimeCheck.detected ? '🔄 Monkey Awake After Nap' : '🍌 Monkey Bot Activated')
+        .setTitle(downtimeCheck.detected ? '🔄 Authentication Service Resumed' : '🟢 Authentication Service Started')
         .setDescription(downtimeCheck.detected 
-          ? `MonkeyBytes Jungle Bot is now back online after taking a ${downtimeCheck.duration} minute nap.`
-          : `MonkeyBytes Jungle Bot is now swinging through the vines and ready to help!`)
+          ? `MonkeyBytes Authentication Service is now back online after ${downtimeCheck.duration} minutes of downtime.`
+          : `MonkeyBytes Authentication Service is now online and operational!`)
         .addFields(fields)
         .setColor(downtimeCheck.detected ? '#FFA500' : '#00FF00')
         .setFooter({ text: config.embedFooter })
@@ -1877,6 +2576,9 @@ client.once('ready', async () => {
         
       await uptimeLogsChannel.send({ embeds: [uptimeEmbed] });
     }
+    
+    // Run initial database sync on startup
+    await syncDatabaseWithRoles();
     
     // Start heartbeats and checks
     sendHeartbeat();
@@ -1887,6 +2589,9 @@ client.once('ready', async () => {
       if (!userDB.pendingApprovals || Object.keys(userDB.pendingApprovals).length === 0) return;
       await checkPendingApprovals();
     }, 30000);
+    
+    // Run database sync every minute
+    setInterval(syncDatabaseWithRoles, 60000);
     
     // Periodically update the "last online" time
     // This won't detect downtime while running (that's impossible),
@@ -1901,12 +2606,32 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
   try {
+    // Log command usage
+    if (interaction.isChatInputCommand()) {
+      // Slash command
+      const { commandName, options } = interaction;
+      const optionsString = options?._hoistedOptions?.map(opt => `${opt.name}:${opt.value}`).join(',') || '';
+      
+      logger.command(`Slash command executed: /${commandName} ${optionsString ? `[${optionsString}]` : ''} by ${interaction.user.username}#${interaction.user.discriminator} (${interaction.user.id})`);
+    } else if (interaction.isUserContextMenuCommand() || interaction.isMessageContextMenuCommand()) {
+      // Context menu command
+      const { commandName, targetType } = interaction;
+      const targetId = interaction.targetId;
+      const targetString = targetType === 'USER' ? 
+        `user: ${interaction.targetUser?.username}#${interaction.targetUser?.discriminator}` : 
+        `message: ${targetId}`;
+      
+      logger.command(`Context menu "${commandName}" executed on ${targetString} by ${interaction.user.username}#${interaction.user.discriminator} (${interaction.user.id})`);
+    }
+    
     // Handle button interactions
     if (interaction.isButton()) {
+      logger.command(`Button interaction: ${interaction.customId} clicked by ${interaction.user.username}#${interaction.user.discriminator} (${interaction.user.id})`);
+      
       if (interaction.customId === 'verify_button') {
         if (userDB.verifiedUsers && userDB.verifiedUsers[interaction.user.id]) {
           return interaction.reply({
-            content: '✅ You already have your banana! You\'re fully verified in the MonkeyBytes jungle.',
+            content: '✅ Thou already hast thy royal seal! Thou art fully verified in the MonkeyBytes realm.',
             ephemeral: true
           });
         }
@@ -1914,8 +2639,16 @@ client.on('interactionCreate', async interaction => {
         return sendVerificationUrl(interaction);
       }
       
-      // Skip restart/stop button handlers as they use collectors
-      if (interaction.customId.startsWith('confirm_') || interaction.customId.startsWith('cancel_')) {
+      // Let collector handle these specific buttons
+      if (interaction.customId === 'confirm_restart' || 
+          interaction.customId === 'cancel_restart' || 
+          interaction.customId === 'confirm_stop' || 
+          interaction.customId === 'cancel_stop' ||
+          interaction.customId === 'confirm_auth_all' ||
+          interaction.customId === 'cancel_auth_all' ||
+          interaction.customId === 'confirm_deauth_all' ||
+          interaction.customId === 'cancel_deauth_all') {
+        // Don't process these here - the collector will handle them
         return;
       }
       
@@ -1923,7 +2656,7 @@ client.on('interactionCreate', async interaction => {
       if (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('deny_')) {
         if (!isStaffMember(interaction.member)) {
           return interaction.reply({ 
-            content: 'Only monkey elders (staff members) can use this command! 🍌',
+            content: 'Only Lords (staff members) can use this command! 📜',
             ephemeral: true
           });
         }
@@ -1943,12 +2676,12 @@ client.on('interactionCreate', async interaction => {
           }
           
           await interaction.editReply({
-            content: `✅ Successfully ${approved ? 'granted a banana to' : 'denied jungle access for'} <@${userId}>.`,
+            content: `✅ Successfully ${approved ? 'granted a royal seal to' : 'denied realm access for'} <@${userId}>.`,
           });
           
           const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-            .setTitle(approved ? '✅ Banana Granted' : '❌ Banana Denied')
-            .setDescription(`<@${userId}>'s banana request has been ${approved ? 'approved' : 'denied'} by <@${interaction.user.id}>.`)
+            .setTitle(approved ? '✅ Royal Seal Granted' : '❌ Royal Seal Denied')
+            .setDescription(`<@${userId}>'s royal seal request hath been ${approved ? 'approved' : 'denied'} by <@${interaction.user.id}>.`)
             .setColor(approved ? config.embedColor : '#FF0000')
             .setTimestamp();
           
@@ -1958,7 +2691,7 @@ client.on('interactionCreate', async interaction => {
           }).catch(() => {});
         } else {
           await interaction.editReply({
-            content: `❌ Error processing ${approved ? 'approval' : 'denial'}. Monkey might no longer be waiting.`,
+            content: `❌ Error processing ${approved ? 'approval' : 'denial'}. Noble might no longer be waiting.`,
           });
         }
         
@@ -1976,7 +2709,7 @@ client.on('interactionCreate', async interaction => {
       } else if (commandName === 'verify') {
         if (userDB.verifiedUsers && userDB.verifiedUsers[interaction.user.id]) {
           return interaction.reply({
-            content: '✅ You already have your banana! You\'re fully verified in the MonkeyBytes jungle.',
+            content: '✅ Thou already hast thy royal seal! Thou art fully verified in the MonkeyBytes realm.',
             ephemeral: true
           });
         }
@@ -2012,6 +2745,7 @@ client.on('interactionCreate', async interaction => {
     
     // Handle modal submissions
     if (interaction.isModalSubmit()) {
+      logger.command(`Modal submitted: ${interaction.customId} by ${interaction.user.username}#${interaction.user.discriminator} (${interaction.user.id})`);
       await handleModalSubmit(interaction);
     }
   } catch (error) {
@@ -2020,18 +2754,71 @@ client.on('interactionCreate', async interaction => {
     try {
       if (interaction.replied || interaction.deferred) {
         await interaction.editReply({
-          content: `❌ There was a glitch in the jungle. Please try again later.`,
+          content: `❌ There was a glitch in the realm. Pray try again later.`,
           ephemeral: true
         }).catch(() => {});
       } else {
         await interaction.reply({
-          content: `❌ There was a glitch in the jungle. Please try again later.`,
+          content: `❌ There was a glitch in the realm. Pray try again later.`,
           ephemeral: true
         }).catch(() => {});
       }
     } catch (replyError) {
       logger.error(`Failed to send error response`, replyError);
     }
+  }
+});
+
+// Handle members leaving the server
+client.on('guildMemberRemove', async member => {
+  try {
+    const userId = member.id;
+    
+    // Check if the user was verified
+    if (userDB.verifiedUsers && userDB.verifiedUsers[userId]) {
+      logger.info(`Verified user left server: ${member.user.username}#${member.user.discriminator} (${userId})`);
+      
+      const userData = { ...userDB.verifiedUsers[userId] };
+      
+      // Remove from verified list
+      delete userDB.verifiedUsers[userId];
+      
+      // Add to deauthorized list with reason
+      userDB.deauthorizedUsers[userId] = {
+        ...userData,
+        deauthorizedAt: new Date().toISOString(),
+        deauthorizedBy: 'system',
+        deauthorizationReason: 'User left the server'
+      };
+      
+      // Update statistics
+      userDB.statistics.totalDeauths++;
+      
+      // Save the database
+      saveUserDB();
+      
+      // Log to the log channel if available
+      const guild = client.guilds.cache.get(config.guildId);
+      if (guild) {
+        const logChannel = guild.channels.cache.get(config.logChannelId);
+        if (logChannel) {
+          const embed = new EmbedBuilder()
+            .setTitle('👋 Noble Left the Realm')
+            .setDescription(`<@${userId}> (${member.user.username}#${member.user.discriminator}) hath departed from our realm.`)
+            .addFields([
+              { name: 'Noble ID', value: userId, inline: true },
+              { name: 'Verification Status', value: 'Royal Seal Revoked Due to Departure', inline: true }
+            ])
+            .setColor('#FF9B21')
+            .setFooter({ text: config.embedFooter })
+            .setTimestamp();
+          
+          await logChannel.send({ embeds: [embed] }).catch(() => {});
+        }
+      }
+    }
+  } catch (error) {
+    logger.error(`Error handling member leave for ${member.id}`, error);
   }
 });
 
@@ -2047,8 +2834,8 @@ async function shutdown() {
         const uptimeLogsChannel = guild.channels.cache.get(config.uptimeLogsChannelId);
         if (uptimeLogsChannel) {
           const embed = new EmbedBuilder()
-            .setTitle('🛑 Monkey Going to Sleep')
-            .setDescription('Monkey bot is going to sleep now. Good night!')
+            .setTitle('🛑 Authentication Service Shutting Down')
+            .setDescription('MonkeyBytes Authentication Service is shutting down now.')
             .setColor('#FF0000')
             .setTimestamp();
           
@@ -2091,7 +2878,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // ==================== INITIALIZATION ====================
-logger.startup('🍌 Starting MonkeyBytes Jungle Bot');
+logger.startup('📜 Starting MonkeyBytes Royal Bot');
 ensureDatabaseDirectory();
 ensureUserDBStructure();
 loadUserDB();
